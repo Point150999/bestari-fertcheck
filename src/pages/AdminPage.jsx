@@ -48,6 +48,7 @@ export default function AdminPage() {
   const [fieldFilter, setFieldFilter] = useState({ unit_kebun_id: '' });
   const [selectedFields, setSelectedFields] = useState(new Set());
   const [deleteConfirm, setDeleteConfirm] = useState(null); // { message, onConfirm }
+  const [importLoading, setImportLoading] = useState(null); // null | { type, status }
 
   useEffect(() => { loadAll(); }, []);
 
@@ -85,10 +86,14 @@ export default function AdminPage() {
     fd.append('file', file);
     fd.append('unit_kebun_id', form.unit_kebun_id);
     if (type === 'rekomendasi') { fd.append('semester', form.semester || 1); fd.append('tahun', form.tahun || 2026); }
+    if (type === 'rekomendasi') fd.append('kategori', form.importKategori || 'semua');
+    setImportLoading({ type, status: 'uploading' });
     try {
       const res = await api(`/import/${type}`, { method: 'POST', body: fd });
+      setImportLoading(null);
       setImportResult(res);
-    } catch (err) { alert(err.message); }
+      loadAll();
+    } catch (err) { setImportLoading(null); alert('Import gagal: ' + err.message); }
   };
 
   const handleSaveAC = async () => {
@@ -372,7 +377,9 @@ export default function AdminPage() {
                 const file = document.getElementById('import-file-kebun')?.files?.[0];
                 if (!file || !form.unit_kebun_id) return alert('Pilih unit dan file');
                 const fd = new FormData(); fd.append('file', file); fd.append('unit_kebun_id', form.unit_kebun_id);
-                try { setImportResult(await api('/import/struktur-kebun', { method: 'POST', body: fd })); } catch (err) { alert(err.message); }
+                setImportLoading({ type: 'struktur', status: 'uploading' });
+                try { setImportResult(await api('/import/struktur-kebun', { method: 'POST', body: fd })); loadAll(); } catch (err) { alert(err.message); }
+                setImportLoading(null);
               }}><Upload size={14} /> Import Struktur Kebun</button>
             </div>
 
@@ -663,6 +670,23 @@ export default function AdminPage() {
         </Modal>
       )}
       {deleteConfirm && <DeleteConfirmModal message={deleteConfirm.message} onConfirm={deleteConfirm.onConfirm} onCancel={() => setDeleteConfirm(null)} />}
+      {importLoading && (
+        <div className="modal-overlay">
+          <div className="modal" style={{ maxWidth: 380, textAlign: 'center', padding: 32 }}>
+            <div className="spinner" style={{ width: 48, height: 48, margin: '0 auto 20px', borderWidth: 4 }} />
+            <h3 style={{ marginBottom: 8, color: 'var(--text-primary)' }}>
+              {importLoading.type === 'struktur' ? '📁 Import Struktur Kebun' :
+               importLoading.type === 'rekomendasi' ? '📋 Import Rekomendasi' : '📜 Import Realisasi'}
+            </h3>
+            <p style={{ color: 'var(--text-muted)', fontSize: 13 }}>
+              Sedang memproses file Excel... Mohon tunggu.
+            </p>
+            <div style={{ marginTop: 16, padding: '8px 16px', background: 'rgba(99,102,241,0.1)', borderRadius: 8, fontSize: 12, color: 'var(--accent-blue)' }}>
+              ⏳ Proses upload dan validasi data sedang berjalan
+            </div>
+          </div>
+        </div>
+      )}
     </>
   );
 }

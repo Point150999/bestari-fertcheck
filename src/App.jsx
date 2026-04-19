@@ -1,13 +1,15 @@
-import { useState } from 'react';
+import { useState, lazy, Suspense } from 'react';
 import './index.css';
 import { getUser, logout, ROLE_LABELS } from './utils/api';
 import LoginPage from './pages/LoginPage';
-import DashboardPage from './pages/DashboardPage';
-import RekomendasiPage from './pages/RekomendasiPage';
-import RealisasiPage from './pages/RealisasiPage';
-import FormInputPage from './pages/FormInputPage';
-import AdminPage from './pages/AdminPage';
 import { LayoutDashboard, FileText, History, PenLine, Settings, LogOut } from 'lucide-react';
+
+// Lazy load heavy pages for faster initial render
+const DashboardPage = lazy(() => import('./pages/DashboardPage'));
+const RekomendasiPage = lazy(() => import('./pages/RekomendasiPage'));
+const RealisasiPage = lazy(() => import('./pages/RealisasiPage'));
+const FormInputPage = lazy(() => import('./pages/FormInputPage'));
+const AdminPage = lazy(() => import('./pages/AdminPage'));
 
 const NAV_ITEMS = [
   { id: 'dashboard', label: 'Dashboard', mobileLabel: 'Home', icon: LayoutDashboard, roles: ['admin', 'rceo', 'area_controller', 'manager', 'asisten'] },
@@ -20,6 +22,14 @@ const NAV_ITEMS = [
 function getDefaultPage(role) {
   if (role === 'mandor') return 'rekomendasi';
   return 'dashboard';
+}
+
+function PageLoader() {
+  return (
+    <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', height: '50vh' }}>
+      <div className="spinner" style={{ width: 36, height: 36 }} />
+    </div>
+  );
 }
 
 export default function App() {
@@ -86,7 +96,9 @@ export default function App() {
           <button className="btn-logout" onClick={logout} title="Logout"><LogOut size={18} /></button>
         </div>
 
-        {renderPage()}
+        <Suspense fallback={<PageLoader />}>
+          {renderPage()}
+        </Suspense>
       </main>
 
       {/* Mobile Bottom Navigation */}

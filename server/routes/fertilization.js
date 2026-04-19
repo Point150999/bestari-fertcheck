@@ -111,6 +111,26 @@ router.post('/submit', authenticateToken, async (req, res) => {
   }
 });
 
+// ===== DELETE REALISASI =====
+router.delete('/realisasi/:id', authenticateToken, async (req, res) => {
+  try {
+    // Only admin, asisten, mandor can delete
+    if (!['admin', 'asisten', 'mandor'].includes(req.user.role)) {
+      return res.status(403).json({ error: 'Tidak memiliki akses untuk menghapus data' });
+    }
+    const row = await db.get('SELECT * FROM realisasi WHERE id = ?', [req.params.id]);
+    if (!row) return res.status(404).json({ error: 'Data tidak ditemukan' });
+    // Non-admin can only delete their own entries
+    if (req.user.role !== 'admin' && row.user_input_id !== req.user.id) {
+      return res.status(403).json({ error: 'Hanya bisa menghapus data yang Anda input sendiri' });
+    }
+    await db.run('DELETE FROM realisasi WHERE id = ?', [req.params.id]);
+    res.json({ success: true });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 // ===== GET REALISASI / HISTORIS =====
 router.get('/realisasi', authenticateToken, async (req, res) => {
   try {
@@ -193,20 +213,27 @@ router.get('/dashboard', authenticateToken, async (req, res) => {
     const month = String(now.getMonth() + 1).padStart(2, '0');
     const yearMonth = `${year}-${month}`;
 
-    const total_fields = (await db.get(`SELECT COUNT(*) as c FROM field_blok fb JOIN afdeling a ON fb.afdeling_id = a.id WHERE a.${filter}${kategoriJoin}`))?.c || 0;
-    const total_realisasi = (await db.get(`SELECT COUNT(*) as c FROM realisasi r JOIN field_blok fb ON r.field_blok_id = fb.id WHERE r.${filter} AND r.tipe='realisasi'${kategoriJoin}`))?.c || 0;
-    const total_rencana = (await db.get(`SELECT COUNT(*) as c FROM realisasi r JOIN field_blok fb ON r.field_blok_id = fb.id WHERE r.${filter} AND r.tipe='rencana'${kategoriJoin}`))?.c || 0;
-    const realisasi_bulan_ini = (await db.get(`SELECT COUNT(*) as c FROM realisasi r JOIN field_blok fb ON r.field_blok_id = fb.id WHERE r.${filter} AND r.tipe='realisasi' AND to_char(r.tanggal, 'YYYY-MM') = '${yearMonth}'${kategoriJoin}`))?.c || 0;
+    // Run all queries in parallel for speed
+    const [total_fields_r, total_realisasi_r, total_rencana_r, realisasi_bulan_ini_r, monthly_stats] = await Promise.all([
+      db.get(`SELECT COUNT(DISTINCT fb.id) as c FROM field_blok fb JOIN afdeling a ON fb.afdeling_id = a.id WHERE a.${filter}${kategoriJoin}`),
+      db.get(`SELECT COUNT(*) as c FROM realisasi r JOIN field_blok fb ON r.field_blok_id = fb.id WHERE r.${filter} AND r.tipe='realisasi'${kategoriJoin}`),
+      db.get(`SELECT COUNT(*) as c FROM realisasi r JOIN field_blok fb ON r.field_blok_id = fb.id WHERE r.${filter} AND r.tipe='rencana'${kategoriJoin}`),
+      db.get(`SELECT COUNT(*) as c FROM realisasi r JOIN field_blok fb ON r.field_blok_id = fb.id WHERE r.${filter} AND r.tipe='realisasi' AND to_char(r.tanggal, 'YYYY-MM') = '${yearMonth}'${kategoriJoin}`),
+      db.all(`
+        SELECT to_char(r.tanggal, 'MM') as bulan, r.tipe, COUNT(*) as jumlah
+        FROM realisasi r JOIN field_blok fb ON r.field_blok_id = fb.id
+        WHERE r.${filter} AND to_char(r.tanggal, 'YYYY') = '${year}'${kategoriJoin}
+        GROUP BY to_char(r.tanggal, 'MM'), r.tipe ORDER BY bulan
+      `)
+    ]);
 
-    // Monthly stats for current year
-    const monthly_stats = await db.all(`
-      SELECT to_char(r.tanggal, 'MM') as bulan, r.tipe, COUNT(*) as jumlah
-      FROM realisasi r JOIN field_blok fb ON r.field_blok_id = fb.id
-      WHERE r.${filter} AND to_char(r.tanggal, 'YYYY') = '${year}'${kategoriJoin}
-      GROUP BY to_char(r.tanggal, 'MM'), r.tipe ORDER BY bulan
-    `);
-
-    res.json({ total_fields, total_realisasi, total_rencana, realisasi_bulan_ini, monthly_stats, units: unitIds });
+    res.json({
+      total_fields: total_fields_r?.c || 0,
+      total_realisasi: total_realisasi_r?.c || 0,
+      total_rencana: total_rencana_r?.c || 0,
+      realisasi_bulan_ini: realisasi_bulan_ini_r?.c || 0,
+      monthly_stats, units: unitIds
+    });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
@@ -259,14 +286,13 @@ router.get('/progress', authenticateToken, async (req, res) => {
       `, [tahun]);
     }
 
-    // Per Divisi (Afdeling)
+    // Per Divisi (Afdeling) - use DISTINCT on nama to avoid duplicates from multiple imports
     const divisiStats = await db.all(`
-      SELECT a.nama as divisi, a.id as afdeling_id,
-        (SELECT COUNT(*) FROM rekomendasi rk2 JOIN field_blok fb2 ON rk2.field_blok_id = fb2.id WHERE fb2.afdeling_id = a.id AND rk2.tahun = ?${katFilter}) as rekom,
-        (SELECT COUNT(*) FROM realisasi r2 JOIN field_blok fb2 ON r2.field_blok_id = fb2.id WHERE fb2.afdeling_id = a.id AND r2.tipe = 'realisasi'${dateFilter}${katFilter}) as real
-      FROM afdeling a
-      WHERE a.unit_kebun_id ${uFilter}
-      ORDER BY a.nama
+      SELECT d.divisi, d.afdeling_id,
+        (SELECT COUNT(*) FROM rekomendasi rk2 JOIN field_blok fb2 ON rk2.field_blok_id = fb2.id JOIN afdeling a2 ON fb2.afdeling_id = a2.id WHERE a2.nama = d.divisi AND a2.unit_kebun_id ${uFilter} AND rk2.tahun = ?${katFilter}) as rekom,
+        (SELECT COUNT(*) FROM realisasi r2 JOIN field_blok fb2 ON r2.field_blok_id = fb2.id JOIN afdeling a2 ON fb2.afdeling_id = a2.id WHERE a2.nama = d.divisi AND a2.unit_kebun_id ${uFilter} AND r2.tipe = 'realisasi'${dateFilter}${katFilter}) as real
+      FROM (SELECT DISTINCT ON (a.nama) a.nama as divisi, a.id as afdeling_id FROM afdeling a WHERE a.unit_kebun_id ${uFilter} ORDER BY a.nama, a.id) d
+      ORDER BY d.divisi
     `, [tahun]);
 
     // Per Jenis Pupuk

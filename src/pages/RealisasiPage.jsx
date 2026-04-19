@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import { api } from '../utils/api';
 import { exportCSV, exportPDF } from '../utils/export';
-import { History, Filter, Download, Printer, ChevronUp, ChevronDown } from 'lucide-react';
+import { History, Download, Printer, ChevronUp, ChevronDown, Trash2, AlertTriangle, X } from 'lucide-react';
 
 function SortHeader({ label, field, sortField, sortDir, onSort }) {
   const active = sortField === field;
@@ -18,6 +18,24 @@ function SortHeader({ label, field, sortField, sortDir, onSort }) {
   );
 }
 
+function DeleteConfirmModal({ message, onConfirm, onCancel }) {
+  return (
+    <div className="modal-overlay" onClick={onCancel}>
+      <div className="modal" onClick={e => e.stopPropagation()} style={{ maxWidth: 420 }}>
+        <div style={{ padding: 24, textAlign: 'center' }}>
+          <AlertTriangle size={48} style={{ color: 'var(--accent-red)', marginBottom: 16 }} />
+          <h3 style={{ marginBottom: 8, color: 'var(--text-primary)' }}>Konfirmasi Hapus</h3>
+          <p style={{ color: 'var(--text-muted)', fontSize: 14, marginBottom: 24 }}>{message}</p>
+          <div style={{ display: 'flex', gap: 12, justifyContent: 'center' }}>
+            <button onClick={onCancel} style={{ padding: '10px 24px', borderRadius: 8, border: '1px solid var(--border)', background: 'transparent', color: 'var(--text-primary)', cursor: 'pointer', fontWeight: 500 }}>Batal</button>
+            <button onClick={onConfirm} style={{ padding: '10px 24px', borderRadius: 8, border: 'none', background: 'var(--accent-red)', color: '#fff', cursor: 'pointer', fontWeight: 600, display: 'flex', alignItems: 'center', gap: 6 }}><Trash2 size={14} /> Ya, Hapus</button>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 export default function RealisasiPage({ user }) {
   const [data, setData] = useState([]);
   const [units, setUnits] = useState([]);
@@ -25,6 +43,9 @@ export default function RealisasiPage({ user }) {
   const [loading, setLoading] = useState(true);
   const [sortField, setSortField] = useState('');
   const [sortDir, setSortDir] = useState('asc');
+  const [deleteConfirm, setDeleteConfirm] = useState(null);
+
+  const canDelete = ['admin', 'asisten', 'mandor'].includes(user.role);
 
   const exportCols = [
     { label: 'Tanggal', key: 'tanggal' },
@@ -68,6 +89,19 @@ export default function RealisasiPage({ user }) {
       setSortField(field);
       setSortDir('asc');
     }
+  };
+
+  const handleDelete = (id, pupukNama, tanggal) => {
+    setDeleteConfirm({
+      message: `Hapus data realisasi "${pupukNama}" tanggal ${tanggal}? Data yang dihapus tidak bisa dikembalikan.`,
+      onConfirm: async () => {
+        setDeleteConfirm(null);
+        try {
+          await api(`/fertilization/realisasi/${id}`, { method: 'DELETE' });
+          loadData();
+        } catch (err) { alert('Gagal menghapus: ' + err.message); }
+      }
+    });
   };
 
   const sortedData = [...data].sort((a, b) => {
@@ -147,6 +181,7 @@ export default function RealisasiPage({ user }) {
                     <SortHeader label="Tipe" field="tipe" sortField={sortField} sortDir={sortDir} onSort={handleSort} />
                     <SortHeader label="Pelaksana" field="pelaksana" sortField={sortField} sortDir={sortDir} onSort={handleSort} />
                     <th>Status</th>
+                    {canDelete && <th style={{ width: 50 }}>Aksi</th>}
                   </tr>
                 </thead>
                 <tbody>
@@ -167,6 +202,11 @@ export default function RealisasiPage({ user }) {
                       <td>
                         {r.is_override ? <span className="badge badge-red">⚠️ Override</span> : <span className="badge badge-green">Normal</span>}
                       </td>
+                      {canDelete && (
+                        <td>
+                          <button className="btn-icon danger" onClick={() => handleDelete(r.id, r.pupuk_nama, r.tanggal)} title="Hapus"><Trash2 size={14} /></button>
+                        </td>
+                      )}
                     </tr>
                   ))}
                 </tbody>
@@ -175,6 +215,7 @@ export default function RealisasiPage({ user }) {
           )}
         </div>
       </div>
+      {deleteConfirm && <DeleteConfirmModal message={deleteConfirm.message} onConfirm={deleteConfirm.onConfirm} onCancel={() => setDeleteConfirm(null)} />}
     </>
   );
 }
