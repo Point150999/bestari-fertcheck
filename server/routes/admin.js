@@ -93,6 +93,22 @@ router.delete('/fields/:id', authenticateToken, requireRole('admin'), async (req
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
+// Bulk delete fields
+router.post('/fields/bulk-delete', authenticateToken, requireRole('admin'), async (req, res) => {
+  try {
+    const { ids } = req.body;
+    if (!ids || !Array.isArray(ids) || ids.length === 0) {
+      return res.status(400).json({ error: 'Pilih minimal 1 field untuk dihapus' });
+    }
+    await db.transaction(async (txDb) => {
+      for (const id of ids) {
+        await txDb.run('DELETE FROM field_blok WHERE id = ?', [id]);
+      }
+    });
+    res.json({ success: true, deleted: ids.length });
+  } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
 router.put('/fields/:id/kategori', authenticateToken, requireRole('admin'), async (req, res) => {
   try {
     const { kategori } = req.body;

@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { api, ROLE_LABELS } from '../utils/api';
-import { Plus, Trash2, Upload, Users, MapPin, Leaf, Shield, X, Building } from 'lucide-react';
+import { Plus, Trash2, Upload, Users, MapPin, Leaf, Shield, X, Building, CheckSquare } from 'lucide-react';
 
 function Modal({ title, onClose, children }) {
   return (
@@ -28,6 +28,7 @@ export default function AdminPage() {
   const [importResult, setImportResult] = useState(null);
   const [fields, setFields] = useState([]);
   const [fieldFilter, setFieldFilter] = useState({ unit_kebun_id: '' });
+  const [selectedFields, setSelectedFields] = useState(new Set());
 
   useEffect(() => { loadAll(); }, []);
 
@@ -123,22 +124,78 @@ export default function AdminPage() {
         )}
 
         {/* ===== FIELDS / BLOK ===== */}
-        {tab === 'fields' && (
+        {tab === 'fields' && (() => {
+          const filteredFields = fields.filter(f => !fieldFilter.unit_kebun_id || String(f.unit_kebun_id) === fieldFilter.unit_kebun_id);
+          const allFilteredSelected = filteredFields.length > 0 && filteredFields.every(f => selectedFields.has(f.id));
+          const toggleAll = () => {
+            if (allFilteredSelected) {
+              const next = new Set(selectedFields);
+              filteredFields.forEach(f => next.delete(f.id));
+              setSelectedFields(next);
+            } else {
+              const next = new Set(selectedFields);
+              filteredFields.forEach(f => next.add(f.id));
+              setSelectedFields(next);
+            }
+          };
+          const toggleOne = (id) => {
+            const next = new Set(selectedFields);
+            next.has(id) ? next.delete(id) : next.add(id);
+            setSelectedFields(next);
+          };
+          const handleBulkDelete = async () => {
+            const ids = [...selectedFields];
+            if (ids.length === 0) return;
+            if (!confirm(`Yakin ingin menghapus ${ids.length} field yang dipilih? Data rekomendasi & realisasi terkait juga akan terhapus.`)) return;
+            try {
+              await api('/admin/fields/bulk-delete', { method: 'POST', body: JSON.stringify({ ids }) });
+              setSelectedFields(new Set());
+              loadAll();
+            } catch (err) { alert(err.message); }
+          };
+          return (
           <div className="table-container">
             <div className="table-header">
-              <h3>Field / Blok ({fields.length})</h3>
-              <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
-                <select className="form-control" style={{ width: 160 }} value={fieldFilter.unit_kebun_id} onChange={e => { setFieldFilter({ unit_kebun_id: e.target.value }); }}>
+              <h3>Field / Blok ({filteredFields.length}{fieldFilter.unit_kebun_id ? ` / ${fields.length} total` : ''})</h3>
+              <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
+                <select className="form-control" style={{ width: 160 }} value={fieldFilter.unit_kebun_id} onChange={e => { setFieldFilter({ unit_kebun_id: e.target.value }); setSelectedFields(new Set()); }}>
                   <option value="">Semua Unit</option>
                   {units.map(u => <option key={u.id} value={u.id}>{u.nama}</option>)}
                 </select>
               </div>
             </div>
+
+            {/* Bulk action bar */}
+            {selectedFields.size > 0 && (
+              <div style={{
+                display: 'flex', alignItems: 'center', gap: 12, padding: '10px 16px',
+                background: 'linear-gradient(135deg, rgba(239,68,68,0.15), rgba(239,68,68,0.05))',
+                border: '1px solid rgba(239,68,68,0.3)', borderRadius: 8, marginBottom: 12
+              }}>
+                <CheckSquare size={16} style={{ color: 'var(--accent-red)' }} />
+                <span style={{ fontSize: 13, fontWeight: 600, color: 'var(--accent-red)' }}>{selectedFields.size} field dipilih</span>
+                <button className="btn btn-sm" style={{ marginLeft: 'auto', background: 'var(--accent-red)', color: '#fff', border: 'none', padding: '6px 16px', borderRadius: 6, cursor: 'pointer', fontWeight: 600, fontSize: 12, display: 'flex', alignItems: 'center', gap: 6 }} onClick={handleBulkDelete}>
+                  <Trash2 size={14} /> Hapus {selectedFields.size} Field
+                </button>
+                <button className="btn btn-sm" style={{ background: 'transparent', color: 'var(--text-muted)', border: '1px solid var(--border)', padding: '6px 12px', borderRadius: 6, cursor: 'pointer', fontSize: 12 }} onClick={() => setSelectedFields(new Set())}>
+                  Batal Pilih
+                </button>
+              </div>
+            )}
+
             <table>
-              <thead><tr><th>Unit</th><th>Afdeling</th><th>Field</th><th>Ha</th><th>Kategori</th><th>Aksi</th></tr></thead>
+              <thead><tr>
+                <th style={{ width: 40, textAlign: 'center' }}>
+                  <input type="checkbox" checked={allFilteredSelected} onChange={toggleAll} style={{ cursor: 'pointer', width: 16, height: 16 }} title="Pilih semua" />
+                </th>
+                <th>Unit</th><th>Afdeling</th><th>Field</th><th>Ha</th><th>Kategori</th><th>Aksi</th>
+              </tr></thead>
               <tbody>
-                {fields.filter(f => !fieldFilter.unit_kebun_id || String(f.unit_kebun_id) === fieldFilter.unit_kebun_id).map(f => (
-                  <tr key={f.id}>
+                {filteredFields.map(f => (
+                  <tr key={f.id} style={{ background: selectedFields.has(f.id) ? 'rgba(99,102,241,0.08)' : undefined }}>
+                    <td style={{ textAlign: 'center' }}>
+                      <input type="checkbox" checked={selectedFields.has(f.id)} onChange={() => toggleOne(f.id)} style={{ cursor: 'pointer', width: 16, height: 16 }} />
+                    </td>
                     <td>{f.unit_nama}</td>
                     <td>{f.afdeling_nama}</td>
                     <td><span className="badge badge-blue">{f.kode || f.nama}</span></td>
@@ -159,9 +216,10 @@ export default function AdminPage() {
                 ))}
               </tbody>
             </table>
-            {fields.length === 0 && <div className="empty-state"><p>Belum ada field</p></div>}
+            {filteredFields.length === 0 && <div className="empty-state"><p>Belum ada field</p></div>}
           </div>
-        )}
+          );
+        })()}
 
         {/* ===== USERS ===== */}
         {tab === 'users' && (
