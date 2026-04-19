@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { api, ROLE_LABELS } from '../utils/api';
-import { Plus, Trash2, Upload, Users, MapPin, Leaf, Shield, X, Building, CheckSquare } from 'lucide-react';
+import { Plus, Trash2, Upload, Users, MapPin, Leaf, Shield, X, Building, CheckSquare, AlertTriangle } from 'lucide-react';
 
 function Modal({ title, onClose, children }) {
   return (
@@ -11,6 +11,24 @@ function Modal({ title, onClose, children }) {
           <button className="btn-icon" onClick={onClose}><X size={16} /></button>
         </div>
         {children}
+      </div>
+    </div>
+  );
+}
+
+function DeleteConfirmModal({ message, onConfirm, onCancel }) {
+  return (
+    <div className="modal-overlay" onClick={onCancel}>
+      <div className="modal" onClick={e => e.stopPropagation()} style={{ maxWidth: 420 }}>
+        <div style={{ padding: 24, textAlign: 'center' }}>
+          <AlertTriangle size={48} style={{ color: 'var(--accent-red)', marginBottom: 16 }} />
+          <h3 style={{ marginBottom: 8, color: 'var(--text-primary)' }}>Konfirmasi Hapus</h3>
+          <p style={{ color: 'var(--text-muted)', fontSize: 14, marginBottom: 24 }}>{message}</p>
+          <div style={{ display: 'flex', gap: 12, justifyContent: 'center' }}>
+            <button onClick={onCancel} style={{ padding: '10px 24px', borderRadius: 8, border: '1px solid var(--border)', background: 'transparent', color: 'var(--text-primary)', cursor: 'pointer', fontWeight: 500 }}>Batal</button>
+            <button onClick={onConfirm} style={{ padding: '10px 24px', borderRadius: 8, border: 'none', background: 'var(--accent-red)', color: '#fff', cursor: 'pointer', fontWeight: 600, display: 'flex', alignItems: 'center', gap: 6 }}><Trash2 size={14} /> Ya, Hapus</button>
+          </div>
+        </div>
       </div>
     </div>
   );
@@ -29,6 +47,7 @@ export default function AdminPage() {
   const [fields, setFields] = useState([]);
   const [fieldFilter, setFieldFilter] = useState({ unit_kebun_id: '' });
   const [selectedFields, setSelectedFields] = useState(new Set());
+  const [deleteConfirm, setDeleteConfirm] = useState(null); // { message, onConfirm }
 
   useEffect(() => { loadAll(); }, []);
 
@@ -50,8 +69,13 @@ export default function AdminPage() {
   };
 
   const handleDelete = async (endpoint) => {
-    if (!confirm('Yakin ingin menghapus?')) return;
-    try { await api(endpoint, { method: 'DELETE' }); loadAll(); } catch (err) { alert(err.message); }
+    setDeleteConfirm({
+      message: 'Data yang dihapus tidak bisa dikembalikan. Lanjutkan?',
+      onConfirm: async () => {
+        setDeleteConfirm(null);
+        try { await api(endpoint, { method: 'DELETE' }); loadAll(); } catch (err) { alert('Gagal menghapus: ' + err.message); }
+      }
+    });
   };
 
   const handleImport = async (type) => {
@@ -146,12 +170,17 @@ export default function AdminPage() {
           const handleBulkDelete = async () => {
             const ids = [...selectedFields];
             if (ids.length === 0) return;
-            if (!confirm(`Yakin ingin menghapus ${ids.length} field yang dipilih? Data rekomendasi & realisasi terkait juga akan terhapus.`)) return;
-            try {
-              await api('/admin/fields/bulk-delete', { method: 'POST', body: JSON.stringify({ ids }) });
-              setSelectedFields(new Set());
-              loadAll();
-            } catch (err) { alert(err.message); }
+            setDeleteConfirm({
+              message: `Yakin ingin menghapus ${ids.length} field yang dipilih? Data rekomendasi & realisasi terkait juga akan terhapus.`,
+              onConfirm: async () => {
+                setDeleteConfirm(null);
+                try {
+                  const res = await api('/admin/fields/bulk-delete', { method: 'POST', body: JSON.stringify({ ids }) });
+                  setSelectedFields(new Set());
+                  loadAll();
+                } catch (err) { alert('Gagal menghapus: ' + err.message); }
+              }
+            });
           };
           return (
           <div className="table-container">
@@ -633,6 +662,7 @@ export default function AdminPage() {
           </div>
         </Modal>
       )}
+      {deleteConfirm && <DeleteConfirmModal message={deleteConfirm.message} onConfirm={deleteConfirm.onConfirm} onCancel={() => setDeleteConfirm(null)} />}
     </>
   );
 }
