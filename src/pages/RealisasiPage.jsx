@@ -1,13 +1,30 @@
 import { useState, useEffect } from 'react';
 import { api } from '../utils/api';
 import { exportCSV, exportPDF } from '../utils/export';
-import { History, Filter, Download, Printer } from 'lucide-react';
+import { History, Filter, Download, Printer, ChevronUp, ChevronDown } from 'lucide-react';
+
+function SortHeader({ label, field, sortField, sortDir, onSort }) {
+  const active = sortField === field;
+  return (
+    <th onClick={() => onSort(field)} style={{ cursor: 'pointer', userSelect: 'none', whiteSpace: 'nowrap' }}>
+      <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }}>
+        {label}
+        <span style={{ display: 'inline-flex', flexDirection: 'column', lineHeight: 0, opacity: active ? 1 : 0.3 }}>
+          <ChevronUp size={10} style={{ marginBottom: -2, color: active && sortDir === 'asc' ? 'var(--accent-blue)' : undefined }} />
+          <ChevronDown size={10} style={{ marginTop: -2, color: active && sortDir === 'desc' ? 'var(--accent-blue)' : undefined }} />
+        </span>
+      </span>
+    </th>
+  );
+}
 
 export default function RealisasiPage({ user }) {
   const [data, setData] = useState([]);
   const [units, setUnits] = useState([]);
   const [filters, setFilters] = useState({ unit_kebun_id: user.unit_kebun_id || '', start_date: '', end_date: '', kategori: 'semua' });
   const [loading, setLoading] = useState(true);
+  const [sortField, setSortField] = useState('');
+  const [sortDir, setSortDir] = useState('asc');
 
   const exportCols = [
     { label: 'Tanggal', key: 'tanggal' },
@@ -44,12 +61,30 @@ export default function RealisasiPage({ user }) {
     loadData(f);
   };
 
+  const handleSort = (field) => {
+    if (sortField === field) {
+      setSortDir(d => d === 'asc' ? 'desc' : 'asc');
+    } else {
+      setSortField(field);
+      setSortDir('asc');
+    }
+  };
+
+  const sortedData = [...data].sort((a, b) => {
+    if (!sortField) return 0;
+    let va = a[sortField], vb = b[sortField];
+    if (sortField === 'field') { va = a.field_kode || a.field_nama; vb = b.field_kode || b.field_nama; }
+    if (sortField === 'pelaksana') { va = a.pelaksana || a.user_nama || ''; vb = b.pelaksana || b.user_nama || ''; }
+    if (va == null) va = '';
+    if (vb == null) vb = '';
+    const numA = Number(va), numB = Number(vb);
+    if (!isNaN(numA) && !isNaN(numB)) return sortDir === 'asc' ? numA - numB : numB - numA;
+    return sortDir === 'asc' ? String(va).localeCompare(String(vb)) : String(vb).localeCompare(String(va));
+  });
+
   return (
     <>
-      <div className="page-header">
-        <h2>📜 Realisasi / Historis Pemupukan</h2>
-        <p>Riwayat pemupukan yang sudah dilakukan</p>
-      </div>
+      <div className="page-header"><h2>📜 Realisasi / Historis Pemupukan</h2><p>Riwayat pemupukan yang sudah dilakukan</p></div>
 
       <div className="page-body">
         <div className="filters-bar">
@@ -103,19 +138,19 @@ export default function RealisasiPage({ user }) {
               <table>
                 <thead>
                   <tr>
-                    <th>Tanggal</th>
-                    <th>Unit</th>
-                    <th>Afdeling</th>
-                    <th>Field</th>
-                    <th>Pupuk</th>
-                    <th>Tonase</th>
-                    <th>Tipe</th>
-                    <th>Pelaksana</th>
+                    <SortHeader label="Tanggal" field="tanggal" sortField={sortField} sortDir={sortDir} onSort={handleSort} />
+                    <SortHeader label="Unit" field="unit_nama" sortField={sortField} sortDir={sortDir} onSort={handleSort} />
+                    <SortHeader label="Afdeling" field="afdeling_nama" sortField={sortField} sortDir={sortDir} onSort={handleSort} />
+                    <SortHeader label="Field" field="field" sortField={sortField} sortDir={sortDir} onSort={handleSort} />
+                    <SortHeader label="Pupuk" field="pupuk_nama" sortField={sortField} sortDir={sortDir} onSort={handleSort} />
+                    <SortHeader label="Tonase" field="dosis_aktual" sortField={sortField} sortDir={sortDir} onSort={handleSort} />
+                    <SortHeader label="Tipe" field="tipe" sortField={sortField} sortDir={sortDir} onSort={handleSort} />
+                    <SortHeader label="Pelaksana" field="pelaksana" sortField={sortField} sortDir={sortDir} onSort={handleSort} />
                     <th>Status</th>
                   </tr>
                 </thead>
                 <tbody>
-                  {data.map(r => (
+                  {sortedData.map(r => (
                     <tr key={r.id}>
                       <td style={{ fontWeight: 500 }}>{r.tanggal}</td>
                       <td>{r.unit_nama}</td>

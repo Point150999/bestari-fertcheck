@@ -88,7 +88,11 @@ router.post('/fields', authenticateToken, requireRole('admin'), async (req, res)
 
 router.delete('/fields/:id', authenticateToken, requireRole('admin'), async (req, res) => {
   try {
-    await db.run('DELETE FROM field_blok WHERE id=?', [req.params.id]);
+    await db.transaction(async (txDb) => {
+      await txDb.run('DELETE FROM realisasi WHERE field_blok_id = ?', [req.params.id]);
+      await txDb.run('DELETE FROM rekomendasi WHERE field_blok_id = ?', [req.params.id]);
+      await txDb.run('DELETE FROM field_blok WHERE id = ?', [req.params.id]);
+    });
     res.json({ success: true });
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
@@ -102,6 +106,8 @@ router.post('/fields/bulk-delete', authenticateToken, requireRole('admin'), asyn
     }
     await db.transaction(async (txDb) => {
       for (const id of ids) {
+        await txDb.run('DELETE FROM realisasi WHERE field_blok_id = ?', [id]);
+        await txDb.run('DELETE FROM rekomendasi WHERE field_blok_id = ?', [id]);
         await txDb.run('DELETE FROM field_blok WHERE id = ?', [id]);
       }
     });
