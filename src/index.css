@@ -1293,6 +1293,87 @@ select.form-control option {
     padding: 2px 6px;
     font-size: 9px;
   }
+
+  /* ===== MOBILE COMPACT FILTERS ===== */
+  .mobile-compact-filters {
+    display: grid !important;
+    grid-template-columns: 1fr 1fr;
+    gap: 8px;
+    flex-direction: unset !important;
+  }
+
+  .mobile-compact-filters .filter-group {
+    min-width: 0;
+  }
+
+  .mobile-compact-filters .filter-group .form-control {
+    min-width: unset;
+    width: 100%;
+    padding: 7px 10px;
+    font-size: 12px;
+  }
+
+  .mobile-compact-filters .filter-group label {
+    font-size: 9px;
+    margin-bottom: 3px;
+  }
+
+  /* ===== HIDE DESKTOP TABLE ON MOBILE ===== */
+  .desktop-table {
+    display: none !important;
+  }
+
+  /* ===== MOBILE CARD LAYOUT ===== */
+  .mobile-cards {
+    display: block !important;
+  }
+
+  .mobile-data-card {
+    border-bottom: 1px solid var(--border);
+    padding: 12px;
+  }
+
+  .mobile-card-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 8px;
+  }
+
+  .mobile-card-body {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 4px 12px;
+  }
+
+  .mobile-card-row {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 2px 0;
+  }
+
+  .mc-label {
+    font-size: 10px;
+    color: var(--text-muted);
+    text-transform: uppercase;
+    letter-spacing: 0.3px;
+  }
+
+  .mc-value {
+    font-size: 12px;
+    color: var(--text-primary);
+    text-align: right;
+  }
+
+  .mobile-card-footer {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-top: 8px;
+    padding-top: 8px;
+    border-top: 1px solid rgba(42, 53, 80, 0.3);
+  }
 }
 
 @media (max-width: 380px) {
@@ -1324,6 +1405,11 @@ select.form-control option {
   font-size: 15px;
   font-weight: 600;
   margin-bottom: 16px;
+}
+
+/* ===== DESKTOP: hide mobile cards, show table ===== */
+.mobile-cards {
+  display: none;
 }
 
 /* ===== ACTION BAR ===== */

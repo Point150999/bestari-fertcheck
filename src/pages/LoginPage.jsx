@@ -64,8 +64,8 @@ export default function LoginPage({ onLogin }) {
           </button>
         </form>
 
-        <p style={{ textAlign: 'center', marginTop: 20, fontSize: 12, color: 'var(--text-muted)' }}>
-          Default: admin@fertcheck.com / admin123
+        <p style={{ textAlign: 'center', marginTop: 20, fontSize: 11, color: 'var(--text-muted)', opacity: 0.7 }}>
+          © 2026 Bestito & Saubari. All rights reserved.
         </p>
       </div>
     </div>

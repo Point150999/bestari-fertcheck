@@ -1,7 +1,16 @@
 import { useState, useEffect } from 'react';
 import { api } from '../utils/api';
 import { exportCSV, exportPDF } from '../utils/export';
-import { History, Download, Printer, ChevronUp, ChevronDown, Trash2, AlertTriangle, X } from 'lucide-react';
+import { History, Download, Printer, ChevronUp, ChevronDown, Trash2, AlertTriangle, CheckSquare } from 'lucide-react';
+
+function formatTanggal(d) {
+  if (!d) return '-';
+  const s = String(d).slice(0, 10);
+  const parts = s.split('-');
+  if (parts.length !== 3) return s;
+  const bulan = ['Jan','Feb','Mar','Apr','Mei','Jun','Jul','Agu','Sep','Okt','Nov','Des'];
+  return `${parseInt(parts[2])} ${bulan[parseInt(parts[1]) - 1]} ${parts[0]}`;
+}
 
 function SortHeader({ label, field, sortField, sortDir, onSort }) {
   const active = sortField === field;
@@ -44,11 +53,12 @@ export default function RealisasiPage({ user }) {
   const [sortField, setSortField] = useState('');
   const [sortDir, setSortDir] = useState('asc');
   const [deleteConfirm, setDeleteConfirm] = useState(null);
+  const [selectedIds, setSelectedIds] = useState(new Set());
 
   const canDelete = ['admin', 'asisten', 'mandor'].includes(user.role);
 
   const exportCols = [
-    { label: 'Tanggal', key: 'tanggal' },
+    { label: 'Tanggal', key: r => formatTanggal(r.tanggal) },
     { label: 'Unit', key: 'unit_nama' },
     { label: 'Afdeling', key: 'afdeling_nama' },
     { label: 'Field', key: r => r.field_kode || r.field_nama },
@@ -72,6 +82,7 @@ export default function RealisasiPage({ user }) {
       const params = new URLSearchParams();
       Object.entries(p).forEach(([k, v]) => { if (v) params.set(k, v); });
       setData(await api(`/fertilization/realisasi?${params}`));
+      setSelectedIds(new Set());
     } catch (err) { console.error(err); }
     setLoading(false);
   };
@@ -91,9 +102,9 @@ export default function RealisasiPage({ user }) {
     }
   };
 
-  const handleDelete = (id, pupukNama, tanggal) => {
+  const handleDeleteSingle = (id, pupukNama, tanggal) => {
     setDeleteConfirm({
-      message: `Hapus data realisasi "${pupukNama}" tanggal ${tanggal}? Data yang dihapus tidak bisa dikembalikan.`,
+      message: `Hapus data realisasi "${pupukNama}" tanggal ${formatTanggal(tanggal)}?`,
       onConfirm: async () => {
         setDeleteConfirm(null);
         try {
@@ -102,6 +113,39 @@ export default function RealisasiPage({ user }) {
         } catch (err) { alert('Gagal menghapus: ' + err.message); }
       }
     });
+  };
+
+  const handleBulkDelete = () => {
+    const ids = [...selectedIds];
+    if (ids.length === 0) return;
+    setDeleteConfirm({
+      message: `Yakin ingin menghapus ${ids.length} data realisasi yang dipilih? Data yang dihapus tidak bisa dikembalikan.`,
+      onConfirm: async () => {
+        setDeleteConfirm(null);
+        try {
+          // Delete one by one since there's no bulk endpoint yet
+          for (const id of ids) {
+            await api(`/fertilization/realisasi/${id}`, { method: 'DELETE' });
+          }
+          setSelectedIds(new Set());
+          loadData();
+        } catch (err) { alert('Gagal menghapus: ' + err.message); }
+      }
+    });
+  };
+
+  const toggleSelect = (id) => {
+    const next = new Set(selectedIds);
+    next.has(id) ? next.delete(id) : next.add(id);
+    setSelectedIds(next);
+  };
+
+  const toggleSelectAll = () => {
+    if (selectedIds.size === sortedData.length) {
+      setSelectedIds(new Set());
+    } else {
+      setSelectedIds(new Set(sortedData.map(r => r.id)));
+    }
   };
 
   const sortedData = [...data].sort((a, b) => {
@@ -121,7 +165,8 @@ export default function RealisasiPage({ user }) {
       <div className="page-header"><h2>📜 Realisasi / Historis Pemupukan</h2><p>Riwayat pemupukan yang sudah dilakukan</p></div>
 
       <div className="page-body">
-        <div className="filters-bar">
+        {/* Compact filter bar for mobile */}
+        <div className="filters-bar mobile-compact-filters">
           {(user.role === 'admin' || user.role === 'area_controller' || user.role === 'rceo') && (
             <div className="filter-group">
               <label>Unit Kebun</label>
@@ -132,22 +177,45 @@ export default function RealisasiPage({ user }) {
             </div>
           )}
           <div className="filter-group">
-            <label>Dari Tanggal</label>
+            <label>Dari</label>
             <input type="date" className="form-control" value={filters.start_date} onChange={e => handleFilter('start_date', e.target.value)} />
           </div>
           <div className="filter-group">
-            <label>Sampai Tanggal</label>
+            <label>Sampai</label>
             <input type="date" className="form-control" value={filters.end_date} onChange={e => handleFilter('end_date', e.target.value)} />
           </div>
           <div className="filter-group">
             <label>Kategori</label>
             <select className="form-control" value={filters.kategori} onChange={e => handleFilter('kategori', e.target.value)}>
-              <option value="semua">Semua (TM+TBM)</option>
-              <option value="TM">Pupuk TM</option>
-              <option value="TBM">Pupuk TBM</option>
+              <option value="semua">Semua</option>
+              <option value="TM">TM</option>
+              <option value="TBM">TBM</option>
             </select>
           </div>
         </div>
+
+        {/* Bulk action bar */}
+        {canDelete && selectedIds.size > 0 && (
+          <div style={{
+            display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+            padding: '10px 16px', margin: '0 0 12px', borderRadius: 8,
+            background: 'rgba(239,68,68,0.08)', border: '1px solid rgba(239,68,68,0.2)'
+          }}>
+            <span style={{ fontSize: 13, fontWeight: 600, color: 'var(--accent-red)', display: 'flex', alignItems: 'center', gap: 6 }}>
+              <CheckSquare size={16} /> {selectedIds.size} data dipilih
+            </span>
+            <div style={{ display: 'flex', gap: 8 }}>
+              <button onClick={handleBulkDelete} style={{
+                padding: '6px 16px', borderRadius: 6, border: 'none', cursor: 'pointer', fontWeight: 600, fontSize: 12,
+                background: 'var(--accent-red)', color: '#fff', display: 'flex', alignItems: 'center', gap: 4
+              }}><Trash2 size={12} /> Hapus {selectedIds.size} Data</button>
+              <button onClick={() => setSelectedIds(new Set())} style={{
+                padding: '6px 16px', borderRadius: 6, border: '1px solid var(--border)', cursor: 'pointer',
+                background: 'transparent', color: 'var(--text-secondary)', fontSize: 12
+              }}>Batal Pilih</button>
+            </div>
+          </div>
+        )}
 
         <div className="table-container">
           <div className="table-header">
@@ -168,50 +236,113 @@ export default function RealisasiPage({ user }) {
               <p>Data akan muncul setelah ada input pemupukan</p>
             </div>
           ) : (
-            <div style={{ overflowX: 'auto' }}>
-              <table>
-                <thead>
-                  <tr>
-                    <SortHeader label="Tanggal" field="tanggal" sortField={sortField} sortDir={sortDir} onSort={handleSort} />
-                    <SortHeader label="Unit" field="unit_nama" sortField={sortField} sortDir={sortDir} onSort={handleSort} />
-                    <SortHeader label="Afdeling" field="afdeling_nama" sortField={sortField} sortDir={sortDir} onSort={handleSort} />
-                    <SortHeader label="Field" field="field" sortField={sortField} sortDir={sortDir} onSort={handleSort} />
-                    <SortHeader label="Pupuk" field="pupuk_nama" sortField={sortField} sortDir={sortDir} onSort={handleSort} />
-                    <SortHeader label="Tonase" field="dosis_aktual" sortField={sortField} sortDir={sortDir} onSort={handleSort} />
-                    <SortHeader label="Tipe" field="tipe" sortField={sortField} sortDir={sortDir} onSort={handleSort} />
-                    <SortHeader label="Pelaksana" field="pelaksana" sortField={sortField} sortDir={sortDir} onSort={handleSort} />
-                    <th>Status</th>
-                    {canDelete && <th style={{ width: 50 }}>Aksi</th>}
-                  </tr>
-                </thead>
-                <tbody>
-                  {sortedData.map(r => (
-                    <tr key={r.id}>
-                      <td style={{ fontWeight: 500 }}>{r.tanggal}</td>
-                      <td>{r.unit_nama}</td>
-                      <td>{r.afdeling_nama}</td>
-                      <td><span className="badge badge-blue">{r.field_kode || r.field_nama}</span></td>
-                      <td style={{ fontWeight: 600 }}>{r.pupuk_nama}</td>
-                      <td>{r.dosis_aktual} kg</td>
-                      <td>
-                        <span className={`badge ${r.tipe === 'realisasi' ? 'badge-green' : 'badge-yellow'}`}>
-                          {r.tipe === 'realisasi' ? '✅ Realisasi' : '📋 Rencana'}
-                        </span>
-                      </td>
-                      <td>{r.pelaksana || r.user_nama || '-'}</td>
-                      <td>
-                        {r.is_override ? <span className="badge badge-red">⚠️ Override</span> : <span className="badge badge-green">Normal</span>}
-                      </td>
+            <>
+              {/* Desktop table */}
+              <div className="desktop-table" style={{ overflowX: 'auto' }}>
+                <table>
+                  <thead>
+                    <tr>
                       {canDelete && (
-                        <td>
-                          <button className="btn-icon danger" onClick={() => handleDelete(r.id, r.pupuk_nama, r.tanggal)} title="Hapus"><Trash2 size={14} /></button>
-                        </td>
+                        <th style={{ width: 40 }}>
+                          <input type="checkbox" checked={selectedIds.size === sortedData.length && sortedData.length > 0} onChange={toggleSelectAll} />
+                        </th>
                       )}
+                      <SortHeader label="Tanggal" field="tanggal" sortField={sortField} sortDir={sortDir} onSort={handleSort} />
+                      <SortHeader label="Unit" field="unit_nama" sortField={sortField} sortDir={sortDir} onSort={handleSort} />
+                      <SortHeader label="Afdeling" field="afdeling_nama" sortField={sortField} sortDir={sortDir} onSort={handleSort} />
+                      <SortHeader label="Field" field="field" sortField={sortField} sortDir={sortDir} onSort={handleSort} />
+                      <SortHeader label="Pupuk" field="pupuk_nama" sortField={sortField} sortDir={sortDir} onSort={handleSort} />
+                      <SortHeader label="Tonase" field="dosis_aktual" sortField={sortField} sortDir={sortDir} onSort={handleSort} />
+                      <SortHeader label="Tipe" field="tipe" sortField={sortField} sortDir={sortDir} onSort={handleSort} />
+                      <SortHeader label="Pelaksana" field="pelaksana" sortField={sortField} sortDir={sortDir} onSort={handleSort} />
+                      <th>Status</th>
+                      {canDelete && <th style={{ width: 50 }}>Aksi</th>}
                     </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
+                  </thead>
+                  <tbody>
+                    {sortedData.map(r => (
+                      <tr key={r.id} style={{ background: selectedIds.has(r.id) ? 'rgba(99,102,241,0.06)' : undefined }}>
+                        {canDelete && (
+                          <td><input type="checkbox" checked={selectedIds.has(r.id)} onChange={() => toggleSelect(r.id)} /></td>
+                        )}
+                        <td style={{ fontWeight: 500, whiteSpace: 'nowrap' }}>{formatTanggal(r.tanggal)}</td>
+                        <td>{r.unit_nama}</td>
+                        <td>{r.afdeling_nama}</td>
+                        <td><span className="badge badge-blue">{r.field_kode || r.field_nama}</span></td>
+                        <td style={{ fontWeight: 600 }}>{r.pupuk_nama}</td>
+                        <td>{r.dosis_aktual} kg</td>
+                        <td>
+                          <span className={`badge ${r.tipe === 'realisasi' ? 'badge-green' : 'badge-yellow'}`}>
+                            {r.tipe === 'realisasi' ? '✅ Realisasi' : '📋 Rencana'}
+                          </span>
+                        </td>
+                        <td>{r.pelaksana || r.user_nama || '-'}</td>
+                        <td>
+                          {r.is_override ? <span className="badge badge-red">⚠️ Override</span> : <span className="badge badge-green">Normal</span>}
+                        </td>
+                        {canDelete && (
+                          <td>
+                            <button className="btn-icon danger" onClick={() => handleDeleteSingle(r.id, r.pupuk_nama, r.tanggal)} title="Hapus"><Trash2 size={14} /></button>
+                          </td>
+                        )}
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+
+              {/* Mobile card layout */}
+              <div className="mobile-cards">
+                {canDelete && (
+                  <div style={{ padding: '8px 12px', borderBottom: '1px solid var(--border)', display: 'flex', alignItems: 'center', gap: 8 }}>
+                    <input type="checkbox" checked={selectedIds.size === sortedData.length && sortedData.length > 0} onChange={toggleSelectAll} />
+                    <span style={{ fontSize: 11, color: 'var(--text-muted)' }}>Pilih semua</span>
+                  </div>
+                )}
+                {sortedData.map(r => (
+                  <div key={r.id} className="mobile-data-card" style={{ background: selectedIds.has(r.id) ? 'rgba(99,102,241,0.06)' : undefined }}>
+                    <div className="mobile-card-header">
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 8, flex: 1 }}>
+                        {canDelete && <input type="checkbox" checked={selectedIds.has(r.id)} onChange={() => toggleSelect(r.id)} />}
+                        <span className="badge badge-blue">{r.field_kode || r.field_nama}</span>
+                        <span style={{ fontWeight: 700, fontSize: 13 }}>{r.pupuk_nama}</span>
+                      </div>
+                      {canDelete && (
+                        <button className="btn-icon danger" onClick={() => handleDeleteSingle(r.id, r.pupuk_nama, r.tanggal)} style={{ width: 28, height: 28 }}><Trash2 size={12} /></button>
+                      )}
+                    </div>
+                    <div className="mobile-card-body">
+                      <div className="mobile-card-row">
+                        <span className="mc-label">Tanggal</span>
+                        <span className="mc-value">{formatTanggal(r.tanggal)}</span>
+                      </div>
+                      <div className="mobile-card-row">
+                        <span className="mc-label">Unit</span>
+                        <span className="mc-value">{r.unit_nama}</span>
+                      </div>
+                      <div className="mobile-card-row">
+                        <span className="mc-label">Afdeling</span>
+                        <span className="mc-value">{r.afdeling_nama}</span>
+                      </div>
+                      <div className="mobile-card-row">
+                        <span className="mc-label">Tonase</span>
+                        <span className="mc-value" style={{ fontWeight: 700 }}>{r.dosis_aktual} kg</span>
+                      </div>
+                      <div className="mobile-card-row">
+                        <span className="mc-label">Pelaksana</span>
+                        <span className="mc-value">{r.pelaksana || r.user_nama || '-'}</span>
+                      </div>
+                    </div>
+                    <div className="mobile-card-footer">
+                      <span className={`badge ${r.tipe === 'realisasi' ? 'badge-green' : 'badge-yellow'}`}>
+                        {r.tipe === 'realisasi' ? '✅ Realisasi' : '📋 Rencana'}
+                      </span>
+                      {r.is_override ? <span className="badge badge-red">⚠️ Override</span> : <span className="badge badge-green">Normal</span>}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </>
           )}
         </div>
       </div>

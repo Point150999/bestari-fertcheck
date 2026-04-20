@@ -39,9 +39,9 @@ router.delete('/units/:id', authenticateToken, requireRole('admin'), async (req,
 router.get('/afdelings', authenticateToken, async (req, res) => {
   try {
     const { unit_kebun_id } = req.query;
-    let q = 'SELECT a.*, uk.nama as unit_nama FROM afdeling a JOIN unit_kebun uk ON a.unit_kebun_id = uk.id';
+    let q = `SELECT DISTINCT ON (a.nama) a.*, uk.nama as unit_nama FROM afdeling a JOIN unit_kebun uk ON a.unit_kebun_id = uk.id`;
     if (unit_kebun_id) q += ` WHERE a.unit_kebun_id = ${parseInt(unit_kebun_id)}`;
-    q += ' ORDER BY a.nama';
+    q += ' ORDER BY a.nama, a.id';
     res.json(await db.all(q));
   } catch (err) { res.status(500).json({ error: err.message }); }
 });

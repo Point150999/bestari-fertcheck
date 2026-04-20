@@ -3,6 +3,15 @@ import { api } from '../utils/api';
 import { exportCSV, exportPDF } from '../utils/export';
 import { FileText, Download, Printer, ChevronUp, ChevronDown, Trash2, AlertTriangle, CheckSquare } from 'lucide-react';
 
+function formatTanggal(d) {
+  if (!d) return '-';
+  const s = String(d).slice(0, 10);
+  const parts = s.split('-');
+  if (parts.length !== 3) return s;
+  const bulan = ['Jan','Feb','Mar','Apr','Mei','Jun','Jul','Agu','Sep','Okt','Nov','Des'];
+  return `${parseInt(parts[2])} ${bulan[parseInt(parts[1]) - 1]} ${parts[0]}`;
+}
+
 function SortHeader({ label, field, sortField, sortDir, onSort }) {
   const active = sortField === field;
   return (
@@ -55,7 +64,7 @@ export default function RekomendasiPage({ user }) {
     { label: 'Pupuk', key: 'pupuk_nama' },
     { label: 'Dosis/Pokok', key: 'dosis_per_pokok' },
     { label: 'Tonase', key: 'tonase' },
-    { label: 'Tanggal Rencana', key: 'tanggal_rencana' },
+    { label: 'Tanggal Rencana', key: r => formatTanggal(r.tanggal_rencana) },
     { label: 'Semester', key: r => `S${r.semester}` },
   ];
 
@@ -155,10 +164,11 @@ export default function RekomendasiPage({ user }) {
       <div className="page-header"><h2>📋 Rekomendasi Pupuk</h2><p>Data rekomendasi pemupukan per field</p></div>
 
       <div className="page-body">
-        <div className="filters-bar">
+        {/* Compact filter bar */}
+        <div className="filters-bar mobile-compact-filters">
           {(user.role === 'admin' || user.role === 'area_controller' || user.role === 'rceo') && (
             <div className="filter-group">
-              <label>Unit Kebun</label>
+              <label>Unit</label>
               <select className="form-control" value={filters.unit_kebun_id} onChange={e => handleFilter('unit_kebun_id', e.target.value)}>
                 <option value="">Semua Unit</option>
                 {units.map(u => <option key={u.id} value={u.id}>{u.nama}</option>)}
@@ -175,16 +185,16 @@ export default function RekomendasiPage({ user }) {
             <label>Semester</label>
             <select className="form-control" value={filters.semester} onChange={e => handleFilter('semester', e.target.value)}>
               <option value="">Semua</option>
-              <option value="1">Semester 1</option>
-              <option value="2">Semester 2</option>
+              <option value="1">S1</option>
+              <option value="2">S2</option>
             </select>
           </div>
           <div className="filter-group">
             <label>Kategori</label>
             <select className="form-control" value={filters.kategori} onChange={e => handleFilter('kategori', e.target.value)}>
-              <option value="semua">Semua (TM+TBM)</option>
-              <option value="TM">Pupuk TM</option>
-              <option value="TBM">Pupuk TBM</option>
+              <option value="semua">Semua</option>
+              <option value="TM">TM</option>
+              <option value="TBM">TBM</option>
             </select>
           </div>
         </div>
@@ -192,7 +202,7 @@ export default function RekomendasiPage({ user }) {
         {/* Bulk action bar */}
         {isAdmin && selectedIds.size > 0 && (
           <div style={{
-            display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+            display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap',
             padding: '10px 16px', margin: '0 0 12px', borderRadius: 8,
             background: 'rgba(239,68,68,0.08)', border: '1px solid rgba(239,68,68,0.2)'
           }}>
@@ -203,11 +213,11 @@ export default function RekomendasiPage({ user }) {
               <button onClick={handleBulkDelete} style={{
                 padding: '6px 16px', borderRadius: 6, border: 'none', cursor: 'pointer', fontWeight: 600, fontSize: 12,
                 background: 'var(--accent-red)', color: '#fff', display: 'flex', alignItems: 'center', gap: 4
-              }}><Trash2 size={12} /> Hapus {selectedIds.size} Data</button>
+              }}><Trash2 size={12} /> Hapus {selectedIds.size}</button>
               <button onClick={() => setSelectedIds(new Set())} style={{
                 padding: '6px 16px', borderRadius: 6, border: '1px solid var(--border)', cursor: 'pointer',
                 background: 'transparent', color: 'var(--text-secondary)', fontSize: 12
-              }}>Batal Pilih</button>
+              }}>Batal</button>
             </div>
           </div>
         )}
@@ -231,50 +241,99 @@ export default function RekomendasiPage({ user }) {
               <p>Admin bisa menambahkan rekomendasi melalui import Excel</p>
             </div>
           ) : (
-            <div style={{ overflowX: 'auto' }}>
-              <table>
-                <thead>
-                  <tr>
-                    {isAdmin && (
-                      <th style={{ width: 40 }}>
-                        <input type="checkbox" checked={selectedIds.size === sortedData.length && sortedData.length > 0} onChange={toggleSelectAll} />
-                      </th>
-                    )}
-                    <SortHeader label="Unit" field="unit_nama" sortField={sortField} sortDir={sortDir} onSort={handleSort} />
-                    <SortHeader label="Afdeling" field="afdeling_nama" sortField={sortField} sortDir={sortDir} onSort={handleSort} />
-                    <SortHeader label="Field" field="field" sortField={sortField} sortDir={sortDir} onSort={handleSort} />
-                    <SortHeader label="Pupuk" field="pupuk_nama" sortField={sortField} sortDir={sortDir} onSort={handleSort} />
-                    <SortHeader label="Dosis/Pokok" field="dosis_per_pokok" sortField={sortField} sortDir={sortDir} onSort={handleSort} />
-                    <SortHeader label="Tonase" field="tonase" sortField={sortField} sortDir={sortDir} onSort={handleSort} />
-                    <SortHeader label="Tgl Rencana" field="tanggal_rencana" sortField={sortField} sortDir={sortDir} onSort={handleSort} />
-                    <SortHeader label="Semester" field="semester" sortField={sortField} sortDir={sortDir} onSort={handleSort} />
-                    {isAdmin && <th style={{ width: 50 }}>Aksi</th>}
-                  </tr>
-                </thead>
-                <tbody>
-                  {sortedData.map(r => (
-                    <tr key={r.id} style={{ background: selectedIds.has(r.id) ? 'rgba(99,102,241,0.06)' : undefined }}>
+            <>
+              {/* Desktop table */}
+              <div className="desktop-table" style={{ overflowX: 'auto' }}>
+                <table>
+                  <thead>
+                    <tr>
                       {isAdmin && (
-                        <td><input type="checkbox" checked={selectedIds.has(r.id)} onChange={() => toggleSelect(r.id)} /></td>
+                        <th style={{ width: 40 }}>
+                          <input type="checkbox" checked={selectedIds.size === sortedData.length && sortedData.length > 0} onChange={toggleSelectAll} />
+                        </th>
                       )}
-                      <td>{r.unit_nama}</td>
-                      <td>{r.afdeling_nama}</td>
-                      <td><span className="badge badge-blue">{r.field_kode || r.field_nama}</span></td>
-                      <td style={{ fontWeight: 600 }}>{r.pupuk_nama}</td>
-                      <td>{r.dosis_per_pokok || '-'} kg</td>
-                      <td>{r.tonase || r.dosis_per_ha || '-'} kg</td>
-                      <td>{r.tanggal_rencana || '-'}</td>
-                      <td><span className="badge badge-purple">S{r.semester}</span></td>
-                      {isAdmin && (
-                        <td>
-                          <button className="btn-icon danger" onClick={() => handleDeleteSingle(r.id, r.pupuk_nama, r.field_kode || r.field_nama)} title="Hapus"><Trash2 size={14} /></button>
-                        </td>
-                      )}
+                      <SortHeader label="Unit" field="unit_nama" sortField={sortField} sortDir={sortDir} onSort={handleSort} />
+                      <SortHeader label="Afdeling" field="afdeling_nama" sortField={sortField} sortDir={sortDir} onSort={handleSort} />
+                      <SortHeader label="Field" field="field" sortField={sortField} sortDir={sortDir} onSort={handleSort} />
+                      <SortHeader label="Pupuk" field="pupuk_nama" sortField={sortField} sortDir={sortDir} onSort={handleSort} />
+                      <SortHeader label="Dosis/Pokok" field="dosis_per_pokok" sortField={sortField} sortDir={sortDir} onSort={handleSort} />
+                      <SortHeader label="Tonase" field="tonase" sortField={sortField} sortDir={sortDir} onSort={handleSort} />
+                      <SortHeader label="Tgl Rencana" field="tanggal_rencana" sortField={sortField} sortDir={sortDir} onSort={handleSort} />
+                      <SortHeader label="Semester" field="semester" sortField={sortField} sortDir={sortDir} onSort={handleSort} />
+                      {isAdmin && <th style={{ width: 50 }}>Aksi</th>}
                     </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
+                  </thead>
+                  <tbody>
+                    {sortedData.map(r => (
+                      <tr key={r.id} style={{ background: selectedIds.has(r.id) ? 'rgba(99,102,241,0.06)' : undefined }}>
+                        {isAdmin && (
+                          <td><input type="checkbox" checked={selectedIds.has(r.id)} onChange={() => toggleSelect(r.id)} /></td>
+                        )}
+                        <td>{r.unit_nama}</td>
+                        <td>{r.afdeling_nama}</td>
+                        <td><span className="badge badge-blue">{r.field_kode || r.field_nama}</span></td>
+                        <td style={{ fontWeight: 600 }}>{r.pupuk_nama}</td>
+                        <td>{r.dosis_per_pokok || '-'} kg</td>
+                        <td>{r.tonase || '-'} kg</td>
+                        <td style={{ whiteSpace: 'nowrap' }}>{formatTanggal(r.tanggal_rencana)}</td>
+                        <td><span className="badge badge-purple">S{r.semester}</span></td>
+                        {isAdmin && (
+                          <td>
+                            <button className="btn-icon danger" onClick={() => handleDeleteSingle(r.id, r.pupuk_nama, r.field_kode || r.field_nama)} title="Hapus"><Trash2 size={14} /></button>
+                          </td>
+                        )}
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+
+              {/* Mobile card layout */}
+              <div className="mobile-cards">
+                {isAdmin && (
+                  <div style={{ padding: '8px 12px', borderBottom: '1px solid var(--border)', display: 'flex', alignItems: 'center', gap: 8 }}>
+                    <input type="checkbox" checked={selectedIds.size === sortedData.length && sortedData.length > 0} onChange={toggleSelectAll} />
+                    <span style={{ fontSize: 11, color: 'var(--text-muted)' }}>Pilih semua</span>
+                  </div>
+                )}
+                {sortedData.map(r => (
+                  <div key={r.id} className="mobile-data-card" style={{ background: selectedIds.has(r.id) ? 'rgba(99,102,241,0.06)' : undefined }}>
+                    <div className="mobile-card-header">
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 8, flex: 1 }}>
+                        {isAdmin && <input type="checkbox" checked={selectedIds.has(r.id)} onChange={() => toggleSelect(r.id)} />}
+                        <span className="badge badge-blue">{r.field_kode || r.field_nama}</span>
+                        <span style={{ fontWeight: 700, fontSize: 13 }}>{r.pupuk_nama}</span>
+                      </div>
+                      {isAdmin && (
+                        <button className="btn-icon danger" onClick={() => handleDeleteSingle(r.id, r.pupuk_nama, r.field_kode || r.field_nama)} style={{ width: 28, height: 28 }}><Trash2 size={12} /></button>
+                      )}
+                    </div>
+                    <div className="mobile-card-body">
+                      <div className="mobile-card-row">
+                        <span className="mc-label">Afdeling</span>
+                        <span className="mc-value">{r.afdeling_nama}</span>
+                      </div>
+                      <div className="mobile-card-row">
+                        <span className="mc-label">Dosis/Pokok</span>
+                        <span className="mc-value">{r.dosis_per_pokok || '-'} kg</span>
+                      </div>
+                      <div className="mobile-card-row">
+                        <span className="mc-label">Tonase</span>
+                        <span className="mc-value" style={{ fontWeight: 700 }}>{r.tonase || '-'} kg</span>
+                      </div>
+                      <div className="mobile-card-row">
+                        <span className="mc-label">Tgl Rencana</span>
+                        <span className="mc-value">{formatTanggal(r.tanggal_rencana)}</span>
+                      </div>
+                    </div>
+                    <div className="mobile-card-footer">
+                      <span className="badge badge-purple">S{r.semester}</span>
+                      <span style={{ fontSize: 11, color: 'var(--text-muted)' }}>{r.unit_nama}</span>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </>
           )}
         </div>
       </div>

@@ -1,6 +1,43 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { api } from '../utils/api';
 import { Send, AlertTriangle, CheckCircle, Info, X, CalendarClock } from 'lucide-react';
+
+// Sound effects using Web Audio API (no external files needed)
+function playSound(type) {
+  try {
+    const ctx = new (window.AudioContext || window.webkitAudioContext)();
+    if (type === 'antagonis') {
+      // Warning beep - two descending tones
+      [0, 0.15].forEach((delay, i) => {
+        const osc = ctx.createOscillator();
+        const gain = ctx.createGain();
+        osc.connect(gain);
+        gain.connect(ctx.destination);
+        osc.type = 'square';
+        osc.frequency.value = i === 0 ? 800 : 500;
+        gain.gain.setValueAtTime(0.15, ctx.currentTime + delay);
+        gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + delay + 0.2);
+        osc.start(ctx.currentTime + delay);
+        osc.stop(ctx.currentTime + delay + 0.2);
+      });
+    } else {
+      // Success chime - ascending pleasant tones
+      [0, 0.1, 0.2].forEach((delay, i) => {
+        const osc = ctx.createOscillator();
+        const gain = ctx.createGain();
+        osc.connect(gain);
+        gain.connect(ctx.destination);
+        osc.type = 'sine';
+        osc.frequency.value = [523, 659, 784][i]; // C5, E5, G5 - major chord
+        gain.gain.setValueAtTime(0.12, ctx.currentTime + delay);
+        gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + delay + 0.3);
+        osc.start(ctx.currentTime + delay);
+        osc.stop(ctx.currentTime + delay + 0.3);
+      });
+    }
+    setTimeout(() => ctx.close(), 1000);
+  } catch (e) { /* Silently fail if audio not supported */ }
+}
 
 export default function FormInputPage({ user }) {
   const [units, setUnits] = useState([]);
@@ -70,6 +107,13 @@ export default function FormInputPage({ user }) {
         })
       });
 
+      // Play sound effect based on result
+      if (check.status === 'antagonis') {
+        playSound('antagonis');
+      } else {
+        playSound('aman');
+      }
+
       setPopup({ ...check, formData: form });
     } catch (err) {
       alert('Error: ' + err.message);
@@ -109,10 +153,7 @@ export default function FormInputPage({ user }) {
 
   return (
     <>
-      <div className="page-header">
-        <h2>📝 Form Input Pemupukan</h2>
-        <p>Input data rencana atau realisasi pemupukan</p>
-      </div>
+      <div className="page-header"><h2>📝 Form Input Pemupukan</h2><p>Input data rencana atau realisasi pemupukan</p></div>
 
       <div className="page-body">
         {success && (
