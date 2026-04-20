@@ -1,4 +1,4 @@
-import { useState, lazy, Suspense } from 'react';
+import { useState, lazy, Suspense, useCallback } from 'react';
 import './index.css';
 import { getUser, logout, ROLE_LABELS } from './utils/api';
 import LoginPage from './pages/LoginPage';
@@ -32,9 +32,35 @@ function PageLoader() {
   );
 }
 
+// Click sound effect using Web Audio API
+function playClickSound() {
+  try {
+    const ctx = new (window.AudioContext || window.webkitAudioContext)();
+    const osc = ctx.createOscillator();
+    const gain = ctx.createGain();
+    osc.connect(gain);
+    gain.connect(ctx.destination);
+    osc.type = 'sine';
+    osc.frequency.setValueAtTime(1200, ctx.currentTime);
+    osc.frequency.exponentialRampToValueAtTime(800, ctx.currentTime + 0.03);
+    gain.gain.setValueAtTime(0.08, ctx.currentTime);
+    gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.06);
+    osc.start(ctx.currentTime);
+    osc.stop(ctx.currentTime + 0.06);
+    setTimeout(() => ctx.close(), 200);
+  } catch (e) { /* ignore */ }
+}
+
 export default function App() {
   const [user, setUser] = useState(getUser());
   const [activePage, setActivePage] = useState(user ? getDefaultPage(user.role) : 'dashboard');
+
+  const navigateTo = useCallback((pageId) => {
+    if (pageId !== activePage) {
+      playClickSound();
+      setActivePage(pageId);
+    }
+  }, [activePage]);
 
   if (!user) return <LoginPage onLogin={(u) => { setUser(u); setActivePage(getDefaultPage(u.role)); }} />;
 
@@ -67,7 +93,7 @@ export default function App() {
           <div className="nav-section">
             <div className="nav-section-title">Menu</div>
             {visibleNav.map(item => (
-              <button key={item.id} className={`nav-item ${activePage === item.id ? 'active' : ''}`} onClick={() => setActivePage(item.id)}>
+              <button key={item.id} className={`nav-item ${activePage === item.id ? 'active' : ''}`} onClick={() => navigateTo(item.id)}>
                 <item.icon size={18} />
                 <span>{item.label}</span>
               </button>
@@ -87,9 +113,8 @@ export default function App() {
         </div>
       </aside>
 
-      {/* Main Content - includes mobile header inside */}
+      {/* Main Content */}
       <main className="main-content">
-        {/* Mobile Header - inside main so it takes full width */}
         <div className="mobile-header">
           <div className="logo-mini">🌿</div>
           <h1>Bestari FertCheck</h1>
@@ -105,7 +130,7 @@ export default function App() {
       <nav className="bottom-nav">
         <div className="bottom-nav-items">
           {visibleNav.map(item => (
-            <button key={item.id} className={`bottom-nav-item ${activePage === item.id ? 'active' : ''}`} onClick={() => setActivePage(item.id)}>
+            <button key={item.id} className={`bottom-nav-item ${activePage === item.id ? 'active' : ''}`} onClick={() => navigateTo(item.id)}>
               <item.icon size={20} />
               <span>{item.mobileLabel}</span>
             </button>

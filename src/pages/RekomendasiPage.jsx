@@ -49,6 +49,7 @@ export default function RekomendasiPage({ user }) {
   const [data, setData] = useState([]);
   const [units, setUnits] = useState([]);
   const [filters, setFilters] = useState({ unit_kebun_id: user.unit_kebun_id || '', semester: '', tahun: new Date().getFullYear(), kategori: 'semua' });
+  const [localFilters, setLocalFilters] = useState({ divisi: '', pupuk: '' });
   const [loading, setLoading] = useState(true);
   const [sortField, setSortField] = useState('');
   const [sortDir, setSortDir] = useState('asc');
@@ -69,7 +70,7 @@ export default function RekomendasiPage({ user }) {
   ];
 
   useEffect(() => {
-    if (user.role === 'admin' || user.role === 'area_controller' || user.role === 'rceo') {
+    if (['admin', 'area_controller', 'rceo'].includes(user.role)) {
       api('/admin/units').then(setUnits).catch(() => {});
     }
     loadData();
@@ -97,12 +98,8 @@ export default function RekomendasiPage({ user }) {
   };
 
   const handleSort = (field) => {
-    if (sortField === field) {
-      setSortDir(d => d === 'asc' ? 'desc' : 'asc');
-    } else {
-      setSortField(field);
-      setSortDir('asc');
-    }
+    if (sortField === field) setSortDir(d => d === 'asc' ? 'desc' : 'asc');
+    else { setSortField(field); setSortDir('asc'); }
   };
 
   const handleDeleteSingle = (id, pupukNama, fieldNama) => {
@@ -110,63 +107,60 @@ export default function RekomendasiPage({ user }) {
       message: `Hapus rekomendasi "${pupukNama}" untuk field ${fieldNama}?`,
       onConfirm: async () => {
         setDeleteConfirm(null);
-        try {
-          await api(`/fertilization/rekomendasi/${id}`, { method: 'DELETE' });
-          loadData();
-        } catch (err) { alert('Gagal menghapus: ' + err.message); }
+        try { await api(`/fertilization/rekomendasi/${id}`, { method: 'DELETE' }); loadData(); }
+        catch (err) { alert('Gagal menghapus: ' + err.message); }
       }
     });
   };
 
   const handleBulkDelete = () => {
     const ids = [...selectedIds];
-    if (ids.length === 0) return;
+    if (!ids.length) return;
     setDeleteConfirm({
-      message: `Yakin ingin menghapus ${ids.length} data rekomendasi yang dipilih? Data yang dihapus tidak bisa dikembalikan.`,
+      message: `Yakin ingin menghapus ${ids.length} data rekomendasi? Data yang dihapus tidak bisa dikembalikan.`,
       onConfirm: async () => {
         setDeleteConfirm(null);
-        try {
-          await api('/fertilization/rekomendasi/bulk-delete', { method: 'POST', body: JSON.stringify({ ids }) });
-          setSelectedIds(new Set());
-          loadData();
-        } catch (err) { alert('Gagal menghapus: ' + err.message); }
+        try { await api('/fertilization/rekomendasi/bulk-delete', { method: 'POST', body: JSON.stringify({ ids }) }); setSelectedIds(new Set()); loadData(); }
+        catch (err) { alert('Gagal menghapus: ' + err.message); }
       }
     });
   };
 
-  const toggleSelect = (id) => {
-    const next = new Set(selectedIds);
-    next.has(id) ? next.delete(id) : next.add(id);
-    setSelectedIds(next);
-  };
+  const toggleSelect = (id) => { const n = new Set(selectedIds); n.has(id) ? n.delete(id) : n.add(id); setSelectedIds(n); };
 
-  const toggleSelectAll = () => {
-    if (selectedIds.size === sortedData.length) {
-      setSelectedIds(new Set());
-    } else {
-      setSelectedIds(new Set(sortedData.map(r => r.id)));
-    }
-  };
+  // Extract unique divisi and pupuk names from data for local filters
+  const divisiList = [...new Set(data.map(r => r.afdeling_nama).filter(Boolean))].sort();
+  const pupukList = [...new Set(data.map(r => r.pupuk_nama).filter(Boolean))].sort();
 
-  const sortedData = [...data].sort((a, b) => {
+  // Apply local filters + sort
+  const filteredData = data.filter(r => {
+    if (localFilters.divisi && r.afdeling_nama !== localFilters.divisi) return false;
+    if (localFilters.pupuk && r.pupuk_nama !== localFilters.pupuk) return false;
+    return true;
+  });
+
+  const sortedData = [...filteredData].sort((a, b) => {
     if (!sortField) return 0;
     let va = a[sortField], vb = b[sortField];
     if (sortField === 'field') { va = a.field_kode || a.field_nama; vb = b.field_kode || b.field_nama; }
-    if (va == null) va = '';
-    if (vb == null) vb = '';
+    if (va == null) va = ''; if (vb == null) vb = '';
     const numA = Number(va), numB = Number(vb);
     if (!isNaN(numA) && !isNaN(numB)) return sortDir === 'asc' ? numA - numB : numB - numA;
     return sortDir === 'asc' ? String(va).localeCompare(String(vb)) : String(vb).localeCompare(String(va));
   });
+
+  const toggleSelectAll = () => {
+    selectedIds.size === sortedData.length ? setSelectedIds(new Set()) : setSelectedIds(new Set(sortedData.map(r => r.id)));
+  };
 
   return (
     <>
       <div className="page-header"><h2>📋 Rekomendasi Pupuk</h2><p>Data rekomendasi pemupukan per field</p></div>
 
       <div className="page-body">
-        {/* Compact filter bar */}
+        {/* Filters */}
         <div className="filters-bar mobile-compact-filters">
-          {(user.role === 'admin' || user.role === 'area_controller' || user.role === 'rceo') && (
+          {['admin', 'area_controller', 'rceo'].includes(user.role) && (
             <div className="filter-group">
               <label>Unit</label>
               <select className="form-control" value={filters.unit_kebun_id} onChange={e => handleFilter('unit_kebun_id', e.target.value)}>
@@ -197,48 +191,52 @@ export default function RekomendasiPage({ user }) {
               <option value="TBM">TBM</option>
             </select>
           </div>
+          <div className="filter-group">
+            <label>Divisi</label>
+            <select className="form-control" value={localFilters.divisi} onChange={e => { setLocalFilters(p => ({ ...p, divisi: e.target.value })); setSelectedIds(new Set()); }}>
+              <option value="">Semua Divisi</option>
+              {divisiList.map(d => <option key={d} value={d}>{d}</option>)}
+            </select>
+          </div>
+          <div className="filter-group">
+            <label>Pupuk</label>
+            <select className="form-control" value={localFilters.pupuk} onChange={e => { setLocalFilters(p => ({ ...p, pupuk: e.target.value })); setSelectedIds(new Set()); }}>
+              <option value="">Semua Pupuk</option>
+              {pupukList.map(p => <option key={p} value={p}>{p}</option>)}
+            </select>
+          </div>
         </div>
 
         {/* Bulk action bar */}
         {isAdmin && selectedIds.size > 0 && (
-          <div style={{
-            display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap',
-            padding: '10px 16px', margin: '0 0 12px', borderRadius: 8,
-            background: 'rgba(239,68,68,0.08)', border: '1px solid rgba(239,68,68,0.2)'
-          }}>
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', padding: '10px 16px', margin: '0 0 12px', borderRadius: 8, background: 'rgba(239,68,68,0.08)', border: '1px solid rgba(239,68,68,0.2)' }}>
             <span style={{ fontSize: 13, fontWeight: 600, color: 'var(--accent-red)', display: 'flex', alignItems: 'center', gap: 6 }}>
-              <CheckSquare size={16} /> {selectedIds.size} data dipilih
+              <CheckSquare size={16} /> {selectedIds.size} dipilih
             </span>
             <div style={{ display: 'flex', gap: 8 }}>
-              <button onClick={handleBulkDelete} style={{
-                padding: '6px 16px', borderRadius: 6, border: 'none', cursor: 'pointer', fontWeight: 600, fontSize: 12,
-                background: 'var(--accent-red)', color: '#fff', display: 'flex', alignItems: 'center', gap: 4
-              }}><Trash2 size={12} /> Hapus {selectedIds.size}</button>
-              <button onClick={() => setSelectedIds(new Set())} style={{
-                padding: '6px 16px', borderRadius: 6, border: '1px solid var(--border)', cursor: 'pointer',
-                background: 'transparent', color: 'var(--text-secondary)', fontSize: 12
-              }}>Batal</button>
+              <button onClick={handleBulkDelete} style={{ padding: '6px 16px', borderRadius: 6, border: 'none', cursor: 'pointer', fontWeight: 600, fontSize: 12, background: 'var(--accent-red)', color: '#fff', display: 'flex', alignItems: 'center', gap: 4 }}><Trash2 size={12} /> Hapus {selectedIds.size}</button>
+              <button onClick={() => setSelectedIds(new Set())} style={{ padding: '6px 16px', borderRadius: 6, border: '1px solid var(--border)', cursor: 'pointer', background: 'transparent', color: 'var(--text-secondary)', fontSize: 12 }}>Batal</button>
             </div>
           </div>
         )}
 
         <div className="table-container">
           <div className="table-header">
-            <h3><FileText size={16} style={{ display: 'inline', marginRight: 8 }} />Data Rekomendasi ({data.length})</h3>
+            <h3><FileText size={16} style={{ display: 'inline', marginRight: 8 }} />Data Rekomendasi ({sortedData.length}{filteredData.length !== data.length ? ` / ${data.length}` : ''})</h3>
             {data.length > 0 && (
               <div className="export-bar">
-                <button className="btn-export" onClick={() => exportCSV(data, 'rekomendasi_pupuk', exportCols)}><Download size={12} /> CSV</button>
-                <button className="btn-export" onClick={() => exportPDF(data, 'Rekomendasi Pupuk', exportCols)}><Printer size={12} /> PDF</button>
+                <button className="btn-export" onClick={() => exportCSV(sortedData, 'rekomendasi_pupuk', exportCols)}><Download size={12} /> CSV</button>
+                <button className="btn-export" onClick={() => exportPDF(sortedData, 'Rekomendasi Pupuk', exportCols)}><Printer size={12} /> PDF</button>
               </div>
             )}
           </div>
           {loading ? (
             <div className="loading-spinner"><div className="spinner" /></div>
-          ) : data.length === 0 ? (
+          ) : sortedData.length === 0 ? (
             <div className="empty-state">
               <FileText size={48} />
-              <h3>Belum ada data rekomendasi</h3>
-              <p>Admin bisa menambahkan rekomendasi melalui import Excel</p>
+              <h3>{data.length > 0 ? 'Tidak ada data sesuai filter' : 'Belum ada data rekomendasi'}</h3>
+              <p>{data.length > 0 ? 'Coba ubah filter divisi atau pupuk' : 'Admin bisa menambahkan via import Excel'}</p>
             </div>
           ) : (
             <>
@@ -247,11 +245,7 @@ export default function RekomendasiPage({ user }) {
                 <table>
                   <thead>
                     <tr>
-                      {isAdmin && (
-                        <th style={{ width: 40 }}>
-                          <input type="checkbox" checked={selectedIds.size === sortedData.length && sortedData.length > 0} onChange={toggleSelectAll} />
-                        </th>
-                      )}
+                      {isAdmin && <th style={{ width: 40 }}><input type="checkbox" checked={selectedIds.size === sortedData.length && sortedData.length > 0} onChange={toggleSelectAll} /></th>}
                       <SortHeader label="Unit" field="unit_nama" sortField={sortField} sortDir={sortDir} onSort={handleSort} />
                       <SortHeader label="Afdeling" field="afdeling_nama" sortField={sortField} sortDir={sortDir} onSort={handleSort} />
                       <SortHeader label="Field" field="field" sortField={sortField} sortDir={sortDir} onSort={handleSort} />
@@ -266,9 +260,7 @@ export default function RekomendasiPage({ user }) {
                   <tbody>
                     {sortedData.map(r => (
                       <tr key={r.id} style={{ background: selectedIds.has(r.id) ? 'rgba(99,102,241,0.06)' : undefined }}>
-                        {isAdmin && (
-                          <td><input type="checkbox" checked={selectedIds.has(r.id)} onChange={() => toggleSelect(r.id)} /></td>
-                        )}
+                        {isAdmin && <td><input type="checkbox" checked={selectedIds.has(r.id)} onChange={() => toggleSelect(r.id)} /></td>}
                         <td>{r.unit_nama}</td>
                         <td>{r.afdeling_nama}</td>
                         <td><span className="badge badge-blue">{r.field_kode || r.field_nama}</span></td>
@@ -277,11 +269,7 @@ export default function RekomendasiPage({ user }) {
                         <td>{r.tonase || '-'} kg</td>
                         <td style={{ whiteSpace: 'nowrap' }}>{formatTanggal(r.tanggal_rencana)}</td>
                         <td><span className="badge badge-purple">S{r.semester}</span></td>
-                        {isAdmin && (
-                          <td>
-                            <button className="btn-icon danger" onClick={() => handleDeleteSingle(r.id, r.pupuk_nama, r.field_kode || r.field_nama)} title="Hapus"><Trash2 size={14} /></button>
-                          </td>
-                        )}
+                        {isAdmin && <td><button className="btn-icon danger" onClick={() => handleDeleteSingle(r.id, r.pupuk_nama, r.field_kode || r.field_nama)} title="Hapus"><Trash2 size={14} /></button></td>}
                       </tr>
                     ))}
                   </tbody>
@@ -299,32 +287,18 @@ export default function RekomendasiPage({ user }) {
                 {sortedData.map(r => (
                   <div key={r.id} className="mobile-data-card" style={{ background: selectedIds.has(r.id) ? 'rgba(99,102,241,0.06)' : undefined }}>
                     <div className="mobile-card-header">
-                      <div style={{ display: 'flex', alignItems: 'center', gap: 8, flex: 1 }}>
-                        {isAdmin && <input type="checkbox" checked={selectedIds.has(r.id)} onChange={() => toggleSelect(r.id)} />}
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 8, flex: 1, minWidth: 0 }}>
+                        {isAdmin && <input type="checkbox" checked={selectedIds.has(r.id)} onChange={() => toggleSelect(r.id)} style={{ flexShrink: 0 }} />}
                         <span className="badge badge-blue">{r.field_kode || r.field_nama}</span>
-                        <span style={{ fontWeight: 700, fontSize: 13 }}>{r.pupuk_nama}</span>
+                        <span style={{ fontWeight: 700, fontSize: 13, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{r.pupuk_nama}</span>
                       </div>
-                      {isAdmin && (
-                        <button className="btn-icon danger" onClick={() => handleDeleteSingle(r.id, r.pupuk_nama, r.field_kode || r.field_nama)} style={{ width: 28, height: 28 }}><Trash2 size={12} /></button>
-                      )}
+                      {isAdmin && <button className="btn-icon danger" onClick={() => handleDeleteSingle(r.id, r.pupuk_nama, r.field_kode || r.field_nama)} style={{ width: 28, height: 28, flexShrink: 0 }}><Trash2 size={12} /></button>}
                     </div>
                     <div className="mobile-card-body">
-                      <div className="mobile-card-row">
-                        <span className="mc-label">Afdeling</span>
-                        <span className="mc-value">{r.afdeling_nama}</span>
-                      </div>
-                      <div className="mobile-card-row">
-                        <span className="mc-label">Dosis/Pokok</span>
-                        <span className="mc-value">{r.dosis_per_pokok || '-'} kg</span>
-                      </div>
-                      <div className="mobile-card-row">
-                        <span className="mc-label">Tonase</span>
-                        <span className="mc-value" style={{ fontWeight: 700 }}>{r.tonase || '-'} kg</span>
-                      </div>
-                      <div className="mobile-card-row">
-                        <span className="mc-label">Tgl Rencana</span>
-                        <span className="mc-value">{formatTanggal(r.tanggal_rencana)}</span>
-                      </div>
+                      <div className="mobile-card-row"><span className="mc-label">Afdeling</span><span className="mc-value">{r.afdeling_nama}</span></div>
+                      <div className="mobile-card-row"><span className="mc-label">Tonase</span><span className="mc-value" style={{ fontWeight: 700 }}>{r.tonase || '-'} kg</span></div>
+                      <div className="mobile-card-row"><span className="mc-label">Dosis/Pokok</span><span className="mc-value">{r.dosis_per_pokok || '-'} kg</span></div>
+                      <div className="mobile-card-row"><span className="mc-label">Tgl Rencana</span><span className="mc-value">{formatTanggal(r.tanggal_rencana)}</span></div>
                     </div>
                     <div className="mobile-card-footer">
                       <span className="badge badge-purple">S{r.semester}</span>
