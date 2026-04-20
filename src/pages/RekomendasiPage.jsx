@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import { api } from '../utils/api';
 import { exportCSV, exportPDF } from '../utils/export';
-import { FileText, Download, Printer, ChevronUp, ChevronDown } from 'lucide-react';
+import { FileText, Download, Printer, ChevronUp, ChevronDown, Trash2, AlertTriangle, CheckSquare } from 'lucide-react';
 
 function SortHeader({ label, field, sortField, sortDir, onSort }) {
   const active = sortField === field;
@@ -18,6 +18,24 @@ function SortHeader({ label, field, sortField, sortDir, onSort }) {
   );
 }
 
+function DeleteConfirmModal({ message, onConfirm, onCancel }) {
+  return (
+    <div className="modal-overlay" onClick={onCancel}>
+      <div className="modal" onClick={e => e.stopPropagation()} style={{ maxWidth: 420 }}>
+        <div style={{ padding: 24, textAlign: 'center' }}>
+          <AlertTriangle size={48} style={{ color: 'var(--accent-red)', marginBottom: 16 }} />
+          <h3 style={{ marginBottom: 8, color: 'var(--text-primary)' }}>Konfirmasi Hapus</h3>
+          <p style={{ color: 'var(--text-muted)', fontSize: 14, marginBottom: 24 }}>{message}</p>
+          <div style={{ display: 'flex', gap: 12, justifyContent: 'center' }}>
+            <button onClick={onCancel} style={{ padding: '10px 24px', borderRadius: 8, border: '1px solid var(--border)', background: 'transparent', color: 'var(--text-primary)', cursor: 'pointer', fontWeight: 500 }}>Batal</button>
+            <button onClick={onConfirm} style={{ padding: '10px 24px', borderRadius: 8, border: 'none', background: 'var(--accent-red)', color: '#fff', cursor: 'pointer', fontWeight: 600, display: 'flex', alignItems: 'center', gap: 6 }}><Trash2 size={14} /> Ya, Hapus</button>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 export default function RekomendasiPage({ user }) {
   const [data, setData] = useState([]);
   const [units, setUnits] = useState([]);
@@ -25,6 +43,10 @@ export default function RekomendasiPage({ user }) {
   const [loading, setLoading] = useState(true);
   const [sortField, setSortField] = useState('');
   const [sortDir, setSortDir] = useState('asc');
+  const [deleteConfirm, setDeleteConfirm] = useState(null);
+  const [selectedIds, setSelectedIds] = useState(new Set());
+
+  const isAdmin = user.role === 'admin';
 
   const exportCols = [
     { label: 'Unit', key: 'unit_nama' },
@@ -54,6 +76,7 @@ export default function RekomendasiPage({ user }) {
       if (p.tahun) params.set('tahun', p.tahun);
       if (p.kategori && p.kategori !== 'semua') params.set('kategori', p.kategori);
       setData(await api(`/fertilization/rekomendasi?${params}`));
+      setSelectedIds(new Set());
     } catch (err) { console.error(err); }
     setLoading(false);
   };
@@ -70,6 +93,49 @@ export default function RekomendasiPage({ user }) {
     } else {
       setSortField(field);
       setSortDir('asc');
+    }
+  };
+
+  const handleDeleteSingle = (id, pupukNama, fieldNama) => {
+    setDeleteConfirm({
+      message: `Hapus rekomendasi "${pupukNama}" untuk field ${fieldNama}?`,
+      onConfirm: async () => {
+        setDeleteConfirm(null);
+        try {
+          await api(`/fertilization/rekomendasi/${id}`, { method: 'DELETE' });
+          loadData();
+        } catch (err) { alert('Gagal menghapus: ' + err.message); }
+      }
+    });
+  };
+
+  const handleBulkDelete = () => {
+    const ids = [...selectedIds];
+    if (ids.length === 0) return;
+    setDeleteConfirm({
+      message: `Yakin ingin menghapus ${ids.length} data rekomendasi yang dipilih? Data yang dihapus tidak bisa dikembalikan.`,
+      onConfirm: async () => {
+        setDeleteConfirm(null);
+        try {
+          await api('/fertilization/rekomendasi/bulk-delete', { method: 'POST', body: JSON.stringify({ ids }) });
+          setSelectedIds(new Set());
+          loadData();
+        } catch (err) { alert('Gagal menghapus: ' + err.message); }
+      }
+    });
+  };
+
+  const toggleSelect = (id) => {
+    const next = new Set(selectedIds);
+    next.has(id) ? next.delete(id) : next.add(id);
+    setSelectedIds(next);
+  };
+
+  const toggleSelectAll = () => {
+    if (selectedIds.size === sortedData.length) {
+      setSelectedIds(new Set());
+    } else {
+      setSelectedIds(new Set(sortedData.map(r => r.id)));
     }
   };
 
@@ -123,6 +189,29 @@ export default function RekomendasiPage({ user }) {
           </div>
         </div>
 
+        {/* Bulk action bar */}
+        {isAdmin && selectedIds.size > 0 && (
+          <div style={{
+            display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+            padding: '10px 16px', margin: '0 0 12px', borderRadius: 8,
+            background: 'rgba(239,68,68,0.08)', border: '1px solid rgba(239,68,68,0.2)'
+          }}>
+            <span style={{ fontSize: 13, fontWeight: 600, color: 'var(--accent-red)', display: 'flex', alignItems: 'center', gap: 6 }}>
+              <CheckSquare size={16} /> {selectedIds.size} data dipilih
+            </span>
+            <div style={{ display: 'flex', gap: 8 }}>
+              <button onClick={handleBulkDelete} style={{
+                padding: '6px 16px', borderRadius: 6, border: 'none', cursor: 'pointer', fontWeight: 600, fontSize: 12,
+                background: 'var(--accent-red)', color: '#fff', display: 'flex', alignItems: 'center', gap: 4
+              }}><Trash2 size={12} /> Hapus {selectedIds.size} Data</button>
+              <button onClick={() => setSelectedIds(new Set())} style={{
+                padding: '6px 16px', borderRadius: 6, border: '1px solid var(--border)', cursor: 'pointer',
+                background: 'transparent', color: 'var(--text-secondary)', fontSize: 12
+              }}>Batal Pilih</button>
+            </div>
+          </div>
+        )}
+
         <div className="table-container">
           <div className="table-header">
             <h3><FileText size={16} style={{ display: 'inline', marginRight: 8 }} />Data Rekomendasi ({data.length})</h3>
@@ -146,6 +235,11 @@ export default function RekomendasiPage({ user }) {
               <table>
                 <thead>
                   <tr>
+                    {isAdmin && (
+                      <th style={{ width: 40 }}>
+                        <input type="checkbox" checked={selectedIds.size === sortedData.length && sortedData.length > 0} onChange={toggleSelectAll} />
+                      </th>
+                    )}
                     <SortHeader label="Unit" field="unit_nama" sortField={sortField} sortDir={sortDir} onSort={handleSort} />
                     <SortHeader label="Afdeling" field="afdeling_nama" sortField={sortField} sortDir={sortDir} onSort={handleSort} />
                     <SortHeader label="Field" field="field" sortField={sortField} sortDir={sortDir} onSort={handleSort} />
@@ -154,11 +248,15 @@ export default function RekomendasiPage({ user }) {
                     <SortHeader label="Tonase" field="tonase" sortField={sortField} sortDir={sortDir} onSort={handleSort} />
                     <SortHeader label="Tgl Rencana" field="tanggal_rencana" sortField={sortField} sortDir={sortDir} onSort={handleSort} />
                     <SortHeader label="Semester" field="semester" sortField={sortField} sortDir={sortDir} onSort={handleSort} />
+                    {isAdmin && <th style={{ width: 50 }}>Aksi</th>}
                   </tr>
                 </thead>
                 <tbody>
                   {sortedData.map(r => (
-                    <tr key={r.id}>
+                    <tr key={r.id} style={{ background: selectedIds.has(r.id) ? 'rgba(99,102,241,0.06)' : undefined }}>
+                      {isAdmin && (
+                        <td><input type="checkbox" checked={selectedIds.has(r.id)} onChange={() => toggleSelect(r.id)} /></td>
+                      )}
                       <td>{r.unit_nama}</td>
                       <td>{r.afdeling_nama}</td>
                       <td><span className="badge badge-blue">{r.field_kode || r.field_nama}</span></td>
@@ -167,6 +265,11 @@ export default function RekomendasiPage({ user }) {
                       <td>{r.tonase || r.dosis_per_ha || '-'} kg</td>
                       <td>{r.tanggal_rencana || '-'}</td>
                       <td><span className="badge badge-purple">S{r.semester}</span></td>
+                      {isAdmin && (
+                        <td>
+                          <button className="btn-icon danger" onClick={() => handleDeleteSingle(r.id, r.pupuk_nama, r.field_kode || r.field_nama)} title="Hapus"><Trash2 size={14} /></button>
+                        </td>
+                      )}
                     </tr>
                   ))}
                 </tbody>
@@ -175,6 +278,7 @@ export default function RekomendasiPage({ user }) {
           )}
         </div>
       </div>
+      {deleteConfirm && <DeleteConfirmModal message={deleteConfirm.message} onConfirm={deleteConfirm.onConfirm} onCancel={() => setDeleteConfirm(null)} />}
     </>
   );
 }

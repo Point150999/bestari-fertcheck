@@ -131,7 +131,40 @@ router.delete('/realisasi/:id', authenticateToken, async (req, res) => {
   }
 });
 
-// ===== GET REALISASI / HISTORIS =====
+// ===== DELETE REKOMENDASI (admin only) =====
+router.delete('/rekomendasi/:id', authenticateToken, async (req, res) => {
+  try {
+    if (req.user.role !== 'admin') {
+      return res.status(403).json({ error: 'Hanya admin yang bisa menghapus rekomendasi' });
+    }
+    const row = await db.get('SELECT id FROM rekomendasi WHERE id = ?', [req.params.id]);
+    if (!row) return res.status(404).json({ error: 'Data tidak ditemukan' });
+    await db.run('DELETE FROM rekomendasi WHERE id = ?', [req.params.id]);
+    res.json({ success: true });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// ===== BULK DELETE REKOMENDASI (admin only) =====
+router.post('/rekomendasi/bulk-delete', authenticateToken, async (req, res) => {
+  try {
+    if (req.user.role !== 'admin') {
+      return res.status(403).json({ error: 'Hanya admin yang bisa menghapus rekomendasi' });
+    }
+    const { ids } = req.body;
+    if (!ids || !Array.isArray(ids) || ids.length === 0) {
+      return res.status(400).json({ error: 'Pilih minimal 1 data untuk dihapus' });
+    }
+    for (const id of ids) {
+      await db.run('DELETE FROM rekomendasi WHERE id = ?', [id]);
+    }
+    res.json({ success: true, deleted: ids.length });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 router.get('/realisasi', authenticateToken, async (req, res) => {
   try {
     const unitIds = await getAccessibleUnits(req.user);
