@@ -247,18 +247,32 @@ router.get('/dashboard', authenticateToken, async (req, res) => {
     const yearMonth = `${year}-${month}`;
 
     // Run all queries in parallel for speed
-    const [total_fields_r, total_realisasi_r, total_rencana_r, realisasi_bulan_ini_r, monthly_stats] = await Promise.all([
+    const [total_fields_r, total_realisasi_r, total_rencana_r, realisasi_bulan_ini_r, monthly_realisasi, monthly_rencana] = await Promise.all([
       db.get(`SELECT COUNT(DISTINCT fb.id) as c FROM field_blok fb JOIN afdeling a ON fb.afdeling_id = a.id WHERE a.${filter}${kategoriJoin}`),
       db.get(`SELECT COUNT(*) as c FROM realisasi r JOIN field_blok fb ON r.field_blok_id = fb.id WHERE r.${filter} AND r.tipe='realisasi'${kategoriJoin}`),
-      db.get(`SELECT COUNT(*) as c FROM realisasi r JOIN field_blok fb ON r.field_blok_id = fb.id WHERE r.${filter} AND r.tipe='rencana'${kategoriJoin}`),
+      db.get(`SELECT COUNT(*) as c FROM rekomendasi rk JOIN field_blok fb ON rk.field_blok_id = fb.id WHERE rk.${filter} AND rk.tahun = ${year}${kategoriJoin}`),
       db.get(`SELECT COUNT(*) as c FROM realisasi r JOIN field_blok fb ON r.field_blok_id = fb.id WHERE r.${filter} AND r.tipe='realisasi' AND to_char(r.tanggal, 'YYYY-MM') = '${yearMonth}'${kategoriJoin}`),
+      // Monthly realisasi counts
       db.all(`
-        SELECT to_char(r.tanggal, 'MM') as bulan, r.tipe, COUNT(*) as jumlah
+        SELECT to_char(r.tanggal, 'MM') as bulan, COUNT(*) as jumlah
         FROM realisasi r JOIN field_blok fb ON r.field_blok_id = fb.id
-        WHERE r.${filter} AND to_char(r.tanggal, 'YYYY') = '${year}'${kategoriJoin}
-        GROUP BY to_char(r.tanggal, 'MM'), r.tipe ORDER BY bulan
+        WHERE r.${filter} AND r.tipe = 'realisasi' AND to_char(r.tanggal, 'YYYY') = '${year}'${kategoriJoin}
+        GROUP BY to_char(r.tanggal, 'MM') ORDER BY bulan
+      `),
+      // Monthly rencana counts from rekomendasi table using tanggal_rencana
+      db.all(`
+        SELECT to_char(rk.tanggal_rencana, 'MM') as bulan, COUNT(*) as jumlah
+        FROM rekomendasi rk JOIN field_blok fb ON rk.field_blok_id = fb.id
+        WHERE rk.${filter} AND rk.tahun = ${year}${kategoriJoin}
+        GROUP BY to_char(rk.tanggal_rencana, 'MM') ORDER BY bulan
       `)
     ]);
+
+    // Combine monthly stats into the format the frontend expects
+    const monthly_stats = [
+      ...monthly_realisasi.map(m => ({ bulan: m.bulan, tipe: 'realisasi', jumlah: parseInt(m.jumlah) })),
+      ...monthly_rencana.map(m => ({ bulan: m.bulan, tipe: 'rencana', jumlah: parseInt(m.jumlah) }))
+    ];
 
     res.json({
       total_fields: total_fields_r?.c || 0,
