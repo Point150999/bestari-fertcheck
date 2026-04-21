@@ -364,4 +364,159 @@ router.get('/progress', authenticateToken, async (req, res) => {
   }
 });
 
+// ===== REMINDER JADWAL =====
+// Rekomendasi yang belum terealisasi, sorted by urgency
+router.get('/reminder-jadwal', authenticateToken, async (req, res) => {
+  try {
+    const unitIds = await getAccessibleUnits(req.user);
+    if (!unitIds.length) return res.json([]);
+
+    const unitFilter = unitIds.join(',');
+    const { unit_kebun_id } = req.query;
+    const uFilter = unit_kebun_id ? `= ${parseInt(unit_kebun_id)}` : `IN (${unitFilter})`;
+    const tahun = new Date().getFullYear();
+
+    // Get all rekomendasi for this year that have NOT been fully realized
+    const reminders = await db.all(`
+      SELECT rk.id, rk.tanggal_rencana, rk.tonase, rk.semester,
+             fb.kode as field_kode, fb.nama as field_nama,
+             a.nama as afdeling_nama,
+             mp.nama as pupuk_nama,
+             uk.nama as unit_nama
+      FROM rekomendasi rk
+      JOIN field_blok fb ON rk.field_blok_id = fb.id
+      JOIN afdeling a ON fb.afdeling_id = a.id
+      JOIN master_pupuk mp ON rk.pupuk_id = mp.id
+      JOIN unit_kebun uk ON rk.unit_kebun_id = uk.id
+      WHERE rk.unit_kebun_id ${uFilter}
+        AND rk.tahun = ${tahun}
+        AND NOT EXISTS (
+          SELECT 1 FROM realisasi rl
+          WHERE rl.field_blok_id = rk.field_blok_id
+            AND rl.pupuk_id = rk.pupuk_id
+            AND rl.tipe = 'realisasi'
+            AND to_char(rl.tanggal, 'YYYY') = '${tahun}'
+        )
+      ORDER BY rk.tanggal_rencana ASC
+      LIMIT 50
+    `);
+
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+
+    const result = reminders.map(r => {
+      const rencana = new Date(r.tanggal_rencana);
+      rencana.setHours(0, 0, 0, 0);
+      const diffDays = Math.round((rencana - today) / (1000 * 60 * 60 * 24));
+      return {
+        ...r,
+        diff_days: diffDays,
+        status: diffDays < 0 ? 'terlambat' : diffDays === 0 ? 'hari_ini' : 'upcoming'
+      };
+    });
+
+    res.json(result);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// ===== ALERT ANTAGONISME =====
+// Check each field with upcoming rekomendasi vs last realisasi
+router.get('/alert-antagonisme', authenticateToken, async (req, res) => {
+  try {
+    const unitIds = await getAccessibleUnits(req.user);
+    if (!unitIds.length) return res.json([]);
+
+    const unitFilter = unitIds.join(',');
+    const { unit_kebun_id } = req.query;
+    const uFilter = unit_kebun_id ? `= ${parseInt(unit_kebun_id)}` : `IN (${unitFilter})`;
+    const tahun = new Date().getFullYear();
+
+    // Get upcoming rekomendasi with field's last realisasi
+    const alerts = await db.all(`
+      SELECT DISTINCT ON (rk.field_blok_id, rk.pupuk_id)
+        rk.id as rekom_id, rk.tanggal_rencana, rk.field_blok_id, rk.pupuk_id,
+        fb.kode as field_kode, fb.nama as field_nama,
+        a.nama as afdeling_nama,
+        mp.nama as rekom_pupuk_nama,
+        uk.nama as unit_nama,
+        (SELECT rl2.pupuk_id FROM realisasi rl2 WHERE rl2.field_blok_id = rk.field_blok_id AND rl2.tipe = 'realisasi' ORDER BY rl2.tanggal DESC LIMIT 1) as last_pupuk_id,
+        (SELECT mp2.nama FROM realisasi rl3 JOIN master_pupuk mp2 ON rl3.pupuk_id = mp2.id WHERE rl3.field_blok_id = rk.field_blok_id AND rl3.tipe = 'realisasi' ORDER BY rl3.tanggal DESC LIMIT 1) as last_pupuk_nama,
+        (SELECT rl4.tanggal FROM realisasi rl4 WHERE rl4.field_blok_id = rk.field_blok_id AND rl4.tipe = 'realisasi' ORDER BY rl4.tanggal DESC LIMIT 1) as last_tanggal
+      FROM rekomendasi rk
+      JOIN field_blok fb ON rk.field_blok_id = fb.id
+      JOIN afdeling a ON fb.afdeling_id = a.id
+      JOIN master_pupuk mp ON rk.pupuk_id = mp.id
+      JOIN unit_kebun uk ON rk.unit_kebun_id = uk.id
+      WHERE rk.unit_kebun_id ${uFilter}
+        AND rk.tahun = ${tahun}
+        AND NOT EXISTS (
+          SELECT 1 FROM realisasi rl
+          WHERE rl.field_blok_id = rk.field_blok_id
+            AND rl.pupuk_id = rk.pupuk_id
+            AND rl.tipe = 'realisasi'
+            AND to_char(rl.tanggal, 'YYYY') = '${tahun}'
+        )
+      ORDER BY rk.field_blok_id, rk.pupuk_id, rk.tanggal_rencana ASC
+      LIMIT 100
+    `);
+
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+
+    // For each alert, check antagonisme
+    const result = [];
+    for (const a of alerts) {
+      if (!a.last_pupuk_id) continue; // No previous fertilization
+      if (a.last_pupuk_id === a.pupuk_id) continue; // Same pupuk, no antagonisme issue
+
+      // Check SOP antagonisme
+      const sop = await db.get(`
+        SELECT interval_hari FROM sop_antagonisme
+        WHERE (pupuk_a_id = ? AND pupuk_b_id = ?) OR (pupuk_a_id = ? AND pupuk_b_id = ?)
+      `, [a.last_pupuk_id, a.pupuk_id, a.pupuk_id, a.last_pupuk_id]);
+
+      if (sop) {
+        const lastDate = new Date(a.last_tanggal);
+        lastDate.setHours(0, 0, 0, 0);
+        const safeDate = new Date(lastDate);
+        safeDate.setDate(safeDate.getDate() + sop.interval_hari);
+        const diffDays = Math.round((safeDate - today) / (1000 * 60 * 60 * 24));
+
+        result.push({
+          field_kode: a.field_kode,
+          field_nama: a.field_nama,
+          afdeling_nama: a.afdeling_nama,
+          last_pupuk: a.last_pupuk_nama,
+          rekom_pupuk: a.rekom_pupuk_nama,
+          last_tanggal: a.last_tanggal,
+          safe_date: safeDate.toISOString().split('T')[0],
+          sisa_hari: diffDays,
+          status: diffDays <= 0 ? 'aman' : 'antagonis',
+          interval_hari: sop.interval_hari
+        });
+      } else {
+        // No antagonisme rule = aman
+        result.push({
+          field_kode: a.field_kode,
+          field_nama: a.field_nama,
+          afdeling_nama: a.afdeling_nama,
+          last_pupuk: a.last_pupuk_nama,
+          rekom_pupuk: a.rekom_pupuk_nama,
+          last_tanggal: a.last_tanggal,
+          safe_date: null,
+          sisa_hari: 0,
+          status: 'aman',
+          interval_hari: 0
+        });
+      }
+    }
+
+    res.json(result);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 module.exports = router;

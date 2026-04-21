@@ -1,7 +1,16 @@
 import { useState, useEffect } from 'react';
 import { api } from '../utils/api';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend } from 'recharts';
-import { Leaf, MapPin, Calendar, AlertTriangle, TrendingUp } from 'lucide-react';
+import { Leaf, MapPin, Calendar, AlertTriangle, TrendingUp, Clock, Shield, Check, X, ArrowRight } from 'lucide-react';
+
+function formatTanggal(d) {
+  if (!d) return '-';
+  const s = String(d).slice(0, 10);
+  const parts = s.split('-');
+  if (parts.length !== 3) return s;
+  const bulan = ['Jan','Feb','Mar','Apr','Mei','Jun','Jul','Agu','Sep','Okt','Nov','Des'];
+  return `${parseInt(parts[2])} ${bulan[parseInt(parts[1]) - 1]} ${parts[0]}`;
+}
 
 function ProgressBar({ label, pct, rekom, real, color }) {
   const p = Math.min(pct, 100);
@@ -49,9 +58,77 @@ function FilterBtn({ active, onClick, children }) {
   );
 }
 
+// Reminder Jadwal Card
+function ReminderCard({ item }) {
+  const isLate = item.status === 'terlambat';
+  const isToday = item.status === 'hari_ini';
+  const absDays = Math.abs(item.diff_days);
+
+  return (
+    <div style={{
+      display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12,
+      padding: '12px 16px', borderRadius: 10,
+      background: 'var(--bg-secondary)', border: '1px solid var(--border)',
+      transition: 'all 0.2s'
+    }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 12, flex: 1, minWidth: 0 }}>
+        <span style={{ padding: '4px 8px', borderRadius: 6, fontSize: 10, fontWeight: 700, background: 'rgba(239,68,68,0.15)', color: '#ef4444', whiteSpace: 'nowrap' }}>{item.pupuk_nama}</span>
+        <div style={{ minWidth: 0 }}>
+          <div style={{ fontWeight: 700, fontSize: 13, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{item.afdeling_nama} — {item.field_kode || item.field_nama}</div>
+          <div style={{ fontSize: 11, color: 'var(--text-muted)' }}>Prog. {formatTanggal(item.tanggal_rencana)} · {item.tonase ? `${Number(item.tonase).toLocaleString()} kg` : ''}</div>
+        </div>
+      </div>
+      <div style={{
+        padding: '6px 12px', borderRadius: 8, fontSize: 11, fontWeight: 700, whiteSpace: 'nowrap',
+        display: 'flex', alignItems: 'center', gap: 4,
+        background: isLate ? 'rgba(239,68,68,0.12)' : isToday ? 'rgba(245,158,11,0.12)' : 'rgba(16,185,129,0.12)',
+        color: isLate ? '#ef4444' : isToday ? '#f59e0b' : '#10b981'
+      }}>
+        {isLate ? <><AlertTriangle size={12} /> Terlambat {absDays} hr</> :
+         isToday ? <><Clock size={12} /> Hari ini</> :
+         <><Clock size={12} /> {absDays} hr lagi</>}
+      </div>
+    </div>
+  );
+}
+
+// Alert Antagonisme Card
+function AntagonisCard({ item }) {
+  const isAman = item.status === 'aman';
+  return (
+    <div style={{
+      padding: '12px 16px', borderRadius: 10,
+      background: 'var(--bg-secondary)', border: '1px solid var(--border)',
+    }}>
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8, marginBottom: 6 }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 6, flex: 1, flexWrap: 'wrap' }}>
+          <span style={{ padding: '3px 8px', borderRadius: 6, fontSize: 10, fontWeight: 700, background: 'rgba(239,68,68,0.15)', color: '#ef4444' }}>{item.last_pupuk}</span>
+          <ArrowRight size={12} style={{ color: 'var(--text-muted)', flexShrink: 0 }} />
+          <span style={{ padding: '3px 8px', borderRadius: 6, fontSize: 10, fontWeight: 700, background: 'rgba(99,102,241,0.15)', color: '#818cf8' }}>{item.rekom_pupuk}</span>
+        </div>
+        <div style={{
+          padding: '4px 10px', borderRadius: 6, fontSize: 10, fontWeight: 700, whiteSpace: 'nowrap',
+          display: 'flex', alignItems: 'center', gap: 4,
+          background: isAman ? 'rgba(16,185,129,0.12)' : 'rgba(239,68,68,0.12)',
+          color: isAman ? '#10b981' : '#ef4444'
+        }}>
+          {isAman ? <><Check size={11} /> sisa 0 hari</> :
+           <><X size={11} /> sisa {item.sisa_hari} hari</>}
+        </div>
+      </div>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+        <span style={{ fontSize: 11, color: 'var(--text-muted)' }}>{item.afdeling_nama} · <b>{item.field_kode}</b></span>
+        <span style={{ fontSize: 10, color: 'var(--text-muted)' }}>Aman: {formatTanggal(item.safe_date)}</span>
+      </div>
+    </div>
+  );
+}
+
 export default function DashboardPage({ user }) {
   const [stats, setStats] = useState(null);
   const [progress, setProgress] = useState(null);
+  const [reminders, setReminders] = useState([]);
+  const [alerts, setAlerts] = useState([]);
   const [units, setUnits] = useState([]);
   const [selectedUnit, setSelectedUnit] = useState('');
   const [kategori, setKategori] = useState('semua');
@@ -61,6 +138,9 @@ export default function DashboardPage({ user }) {
   const [pUnit, setPUnit] = useState('');
   const [pStartDate, setPStartDate] = useState('');
   const [pEndDate, setPEndDate] = useState('');
+  // Reminder/Alert filters
+  const [reminderDivisi, setReminderDivisi] = useState('');
+  const [alertDivisi, setAlertDivisi] = useState('');
 
   const isMultiUnit = user.role === 'admin' || user.role === 'area_controller' || user.role === 'rceo';
 
@@ -70,6 +150,8 @@ export default function DashboardPage({ user }) {
     }
     loadStats();
     loadProgress();
+    loadReminders();
+    loadAlerts();
   }, []);
 
   const loadStats = async (unitId, kat) => {
@@ -101,6 +183,22 @@ export default function DashboardPage({ user }) {
     } catch (err) { console.error(err); }
   };
 
+  const loadReminders = async () => {
+    try {
+      const params = new URLSearchParams();
+      if (selectedUnit) params.set('unit_kebun_id', selectedUnit);
+      setReminders(await api(`/fertilization/reminder-jadwal?${params}`));
+    } catch (err) { console.error(err); }
+  };
+
+  const loadAlerts = async () => {
+    try {
+      const params = new URLSearchParams();
+      if (selectedUnit) params.set('unit_kebun_id', selectedUnit);
+      setAlerts(await api(`/fertilization/alert-antagonisme?${params}`));
+    } catch (err) { console.error(err); }
+  };
+
   const handleUnitChange = (e) => {
     setSelectedUnit(e.target.value);
     loadStats(e.target.value, kategori);
@@ -117,6 +215,13 @@ export default function DashboardPage({ user }) {
     if (field === 'start') { setPStartDate(v); loadProgress({ start_date: v }); }
     else { setPEndDate(v); loadProgress({ end_date: v }); }
   };
+
+  // Get unique divisi lists for filters
+  const reminderDivisiList = [...new Set(reminders.map(r => r.afdeling_nama).filter(Boolean))].sort();
+  const alertDivisiList = [...new Set(alerts.map(a => a.afdeling_nama).filter(Boolean))].sort();
+
+  const filteredReminders = reminderDivisi ? reminders.filter(r => r.afdeling_nama === reminderDivisi) : reminders;
+  const filteredAlerts = alertDivisi ? alerts.filter(a => a.afdeling_nama === alertDivisi) : alerts;
 
   const monthNames = ['Jan', 'Feb', 'Mar', 'Apr', 'Mei', 'Jun', 'Jul', 'Agu', 'Sep', 'Okt', 'Nov', 'Des'];
   const chartData = monthNames.map((name, i) => {
@@ -176,6 +281,51 @@ export default function DashboardPage({ user }) {
           </div>
         </div>
 
+        {/* ===== REMINDER JADWAL & ALERT ANTAGONISME ===== */}
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(420px, 1fr))', gap: 16, marginBottom: 20 }}>
+          {/* Reminder Jadwal */}
+          <div className="chart-container" style={{ margin: 0 }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 8, marginBottom: 16 }}>
+              <h3 style={{ margin: 0 }}><Clock size={16} style={{ display: 'inline', marginRight: 6, verticalAlign: 'middle' }} />Reminder Jadwal</h3>
+              <select className="form-control" style={{ width: 140, padding: '4px 8px', fontSize: 11 }} value={reminderDivisi} onChange={e => setReminderDivisi(e.target.value)}>
+                <option value="">Semua Divisi</option>
+                {reminderDivisiList.map(d => <option key={d} value={d}>{d}</option>)}
+              </select>
+            </div>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 8, maxHeight: 360, overflowY: 'auto' }}>
+              {filteredReminders.length === 0 ? (
+                <div style={{ textAlign: 'center', padding: 24, color: 'var(--text-muted)', fontSize: 13 }}>
+                  <Check size={32} style={{ color: 'var(--accent-green)', marginBottom: 8 }} /><br />
+                  Semua rekomendasi sudah terealisasi! 🎉
+                </div>
+              ) : (
+                filteredReminders.map(r => <ReminderCard key={r.id} item={r} />)
+              )}
+            </div>
+          </div>
+
+          {/* Alert Antagonisme */}
+          <div className="chart-container" style={{ margin: 0 }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 8, marginBottom: 16 }}>
+              <h3 style={{ margin: 0 }}><Shield size={16} style={{ display: 'inline', marginRight: 6, verticalAlign: 'middle' }} />Alert Antagonisme</h3>
+              <select className="form-control" style={{ width: 140, padding: '4px 8px', fontSize: 11 }} value={alertDivisi} onChange={e => setAlertDivisi(e.target.value)}>
+                <option value="">Semua Divisi</option>
+                {alertDivisiList.map(d => <option key={d} value={d}>{d}</option>)}
+              </select>
+            </div>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 8, maxHeight: 360, overflowY: 'auto' }}>
+              {filteredAlerts.length === 0 ? (
+                <div style={{ textAlign: 'center', padding: 24, color: 'var(--text-muted)', fontSize: 13 }}>
+                  <Shield size={32} style={{ color: 'var(--accent-green)', marginBottom: 8 }} /><br />
+                  Tidak ada alert antagonisme aktif
+                </div>
+              ) : (
+                filteredAlerts.map((a, i) => <AntagonisCard key={i} item={a} />)
+              )}
+            </div>
+          </div>
+        </div>
+
         {/* Progress Section */}
         {progress && (
           <div className="chart-container" style={{ marginBottom: 20 }}>
@@ -183,21 +333,18 @@ export default function DashboardPage({ user }) {
 
             {/* Filter Bar */}
             <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center', margin: '12px 0 16px', padding: '12px 0', borderBottom: '1px solid var(--border)' }}>
-              {/* Kategori Buttons */}
               <FilterBtn active={pKat === 'semua'} onClick={() => handlePKat('semua')}>Total</FilterBtn>
               <FilterBtn active={pKat === 'TM'} onClick={() => handlePKat('TM')}>TM</FilterBtn>
               <FilterBtn active={pKat === 'TBM'} onClick={() => handlePKat('TBM')}>TBM</FilterBtn>
 
               <span style={{ width: 1, height: 24, background: 'var(--border)', margin: '0 4px' }} />
 
-              {/* Date Range */}
               <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
                 <input type="date" className="form-control" style={{ width: 130, padding: '5px 8px', fontSize: 11 }} value={pStartDate} onChange={e => handlePDate('start', e.target.value)} placeholder="Dari" />
                 <span style={{ color: 'var(--text-muted)', fontSize: 11 }}>—</span>
                 <input type="date" className="form-control" style={{ width: 130, padding: '5px 8px', fontSize: 11 }} value={pEndDate} onChange={e => handlePDate('end', e.target.value)} placeholder="Sampai" />
               </div>
 
-              {/* Unit filter for AC/RCEO/Admin */}
               {isMultiUnit && units.length > 0 && (
                 <>
                   <span style={{ width: 1, height: 24, background: 'var(--border)', margin: '0 4px' }} />
@@ -208,7 +355,6 @@ export default function DashboardPage({ user }) {
                 </>
               )}
 
-              {/* Reset */}
               {(pKat !== 'semua' || pUnit || pStartDate || pEndDate) && (
                 <button onClick={() => { setPKat('semua'); setPUnit(''); setPStartDate(''); setPEndDate(''); loadProgress({ kat: 'semua', unit: '', start_date: '', end_date: '' }); }}
                   style={{ padding: '5px 10px', fontSize: 11, borderRadius: 6, border: '1px solid var(--accent-red)', background: 'transparent', color: 'var(--accent-red)', cursor: 'pointer' }}>
@@ -257,8 +403,8 @@ export default function DashboardPage({ user }) {
               <YAxis stroke="#64748b" fontSize={12} />
               <Tooltip contentStyle={{ background: '#1a2234', border: '1px solid #2a3550', borderRadius: 8, color: '#f1f5f9' }} />
               <Legend />
-              <Bar dataKey="Rencana" fill="#f59e0b" radius={[4, 4, 0, 0]} />
               <Bar dataKey="Realisasi" fill="#10b981" radius={[4, 4, 0, 0]} />
+              <Bar dataKey="Rencana" fill="#f59e0b" radius={[4, 4, 0, 0]} />
             </BarChart>
           </ResponsiveContainer>
         </div>

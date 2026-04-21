@@ -82,7 +82,7 @@ export default function App() {
       {/* Desktop Sidebar */}
       <aside className="sidebar">
         <div className="sidebar-header">
-          <div className="sidebar-logo">🌿</div>
+          <div className="sidebar-logo"><img src="/logo.png" alt="FertCheck" style={{ width: 36, height: 36, borderRadius: 8 }} /></div>
           <div className="sidebar-title">
             <h1>Bestari FertCheck</h1>
             <p>Manajemen Pemupukan</p>
@@ -116,7 +116,7 @@ export default function App() {
       {/* Main Content */}
       <main className="main-content">
         <div className="mobile-header">
-          <div className="logo-mini">🌿</div>
+          <div className="logo-mini"><img src="/logo.png" alt="FertCheck" style={{ width: 28, height: 28, borderRadius: 6 }} /></div>
           <h1>Bestari FertCheck</h1>
           <button className="btn-logout" onClick={logout} title="Logout"><LogOut size={18} /></button>
         </div>
