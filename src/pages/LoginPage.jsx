@@ -29,7 +29,7 @@ export default function LoginPage({ onLogin }) {
     <div className="login-page">
       <div className="login-card">
         <div className="login-logo">
-          <div className="icon"><img src="/logo.png" alt="FertCheck" style={{ width: 56, height: 56, borderRadius: 12 }} /></div>
+          <div className="icon"><img src="/logo.png" alt="FertCheck" style={{ width: 112, height: 112 }} /></div>
           <h1>Bestari FertCheck</h1>
           <p>Sistem Manajemen Pemupukan Cerdas</p>
         </div>
